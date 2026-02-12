@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#3498db">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <title>Aufgabenverwaltung</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: #e8f5e9;
+            color: #27ae60;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .status-indicator.offline {
+            background: #ffebee;
+            color: #e74c3c;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .role-selector {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .role-btn {
+            padding: 12px 24px;
+            border: 2px solid #3498db;
+            background: white;
+            color: #3498db;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .role-btn.active {
+            background: #3498db;
+            color: white;
+        }
+
+        .role-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(52,152,219,0.3);
+        }
+
+        .employee-selector {
+            margin-top: 15px;
+            padding: 15px;
+            background: #ecf0f1;
+            border-radius: 8px;
+        }
+
+        .employee-selector label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .employee-selector select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #bdc3c7;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        .notification-toggle {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .notification-toggle button {
+            padding: 8px 16px;
+            background: #ffc107;
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .notification-toggle button:hover {
+            background: #ffb300;
+        }
+
+        .task-form {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .task-form h2 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .priority-selector {
+            display: flex;
+            gap: 15px;
+        }
+
+        .priority-btn {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .priority-btn.important {
+            border-color: #e74c3c;
+            color: #e74c3c;
+        }
+
+        .priority-btn.important.active {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .priority-btn.unimportant {
+            border-color: #95a5a6;
+            color: #95a5a6;
+        }
+
+        .priority-btn.unimportant.active {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .submit-btn:hover {
+            background: #229954;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(39,174,96,0.3);
+        }
+
+        .submit-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .tasks-section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .tasks-section h2 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .task-count {
+            font-size: 16px;
+            color: #7f8c8d;
+            font-weight: normal;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 10px 20px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .filter-btn.active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .task-card {
+            border: 2px solid #ecf0f1;
+            padding: 20px;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+
+        .task-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .task-card.important {
+            border-left: 5px solid #e74c3c;
+        }
+
+        .task-card.overdue {
+            background: #ffebee;
+            border-color: #e74c3c;
+        }
+
+        .task-card.completed {
+            opacity: 0.7;
+            background: #f0f9ff;
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+
+        .task-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            flex: 1;
+        }
+
+        .task-badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge.important {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .badge.unimportant {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .badge.overdue {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .badge.completed {
+            background: #27ae60;
+            color: white;
+        }
+
+        .task-info {
+            color: #7f8c8d;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .task-photo {
+            margin-top: 15px;
+        }
+
+        .task-photo img {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 8px;
+            border: 2px solid #ecf0f1;
+        }
+
+        .task-actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .complete-btn {
+            background: #27ae60;
+            color: white;
+        }
+
+        .complete-btn:hover {
+            background: #229954;
+        }
+
+        .photo-input {
+            display: none;
+        }
+
+        .photo-btn {
+            background: #3498db;
+            color: white;
+        }
+
+        .photo-btn:hover {
+            background: #2980b9;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #95a5a6;
+        }
+
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #27ae60;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease;
+            z-index: 1000;
+            max-width: 300px;
+        }
+
+        .notification.error {
+            background: #e74c3c;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .role-selector {
+                flex-direction: column;
+            }
+
+            .priority-selector {
+                flex-direction: column;
+            }
+
+            .task-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .filter-buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 Aufgabenverwaltung</h1>
+            <span class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                Verbunden
+            </span>
+            
+            <div class="role-selector">
+                <button class="role-btn active" onclick="switchRole('chef')">👔 Chef</button>
+                <button class="role-btn" onclick="switchRole('mitarbeiter')">👷 Mitarbeiter</button>
+            </div>
+            
+            <div class="employee-selector" id="employeeSelector" style="display: none;">
+                <label>Mitarbeiter auswählen:</label>
+                <select id="currentEmployee" onchange="onEmployeeChange()">
+                    <option value="">-- Mitarbeiter wählen --</option>
+                </select>
+                <div class="notification-toggle" id="notificationToggle" style="display: none;">
+                    <span>🔔 Benachrichtigungen:</span>
+                    <button onclick="enableNotifications()">Aktivieren</button>
+                    <span id="notificationStatus"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chef Ansicht -->
+        <div id="chefView">
+            <div class="task-form">
+                <h2>➕ Neue Aufgabe erstellen</h2>
+                <form id="taskForm" onsubmit="createTask(event)">
+                    <div class="form-group">
+                        <label>Aufgabentitel</label>
+                        <input type="text" id="taskTitle" required placeholder="z.B. Zaun im Nordfeld reparieren">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Priorität</label>
+                        <div class="priority-selector">
+                            <button type="button" class="priority-btn important active" onclick="selectPriority('important')">
+                                🔴 Wichtig
+                            </button>
+                            <button type="button" class="priority-btn unimportant" onclick="selectPriority('unimportant')">
+                                ⚪ Unwichtig
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Mitarbeiter zuweisen</label>
+                        <select id="assignEmployee" required>
+                            <option value="">-- Mitarbeiter wählen --</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submitBtn">Aufgabe erstellen</button>
+                </form>
+            </div>
+
+            <div class="tasks-section">
+                <h2>
+                    Alle Aufgaben
+                    <span class="task-count" id="taskCount">0 Aufgaben</span>
+                </h2>
+                
+                <div class="filter-buttons">
+                    <button class="filter-btn active" onclick="filterTasks('all')">Alle</button>
+                    <button class="filter-btn" onclick="filterTasks('open')">Offen</button>
+                    <button class="filter-btn" onclick="filterTasks('overdue')">Überfällig</button>
+                    <button class="filter-btn" onclick="filterTasks('completed')">Erledigt</button>
+                    <button class="filter-btn" onclick="filterTasks('important')">Wichtig</button>
+                </div>
+
+                <div class="task-list" id="taskList"></div>
+            </div>
+        </div>
+
+        <!-- Mitarbeiter Ansicht -->
+        <div id="mitarbeiterView" style="display: none;">
+            <div class="tasks-section">
+                <h2>
+                    Meine Aufgaben
+                    <span class="task-count" id="myTaskCount">0 Aufgaben</span>
+                </h2>
+                
+                <div class="filter-buttons">
+                    <button class="filter-btn active" onclick="filterTasks('all')">Alle</button>
+                    <button class="filter-btn" onclick="filterTasks('open')">Offen</button>
+                    <button class="filter-btn" onclick="filterTasks('completed')">Erledigt</button>
+                </div>
+
+                <div class="task-list" id="myTaskList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
