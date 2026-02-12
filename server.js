@@ -65,20 +65,61 @@ function initDatabase() {
     db.run(`CREATE TABLE IF NOT EXISTS employees (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`, (err) => {
         if (err) console.error('Fehler beim Erstellen der Employees-Tabelle:', err);
         else console.log('✓ Employees-Tabelle bereit');
     });
 
-    // Standard-Mitarbeiter einfügen
-    const defaultEmployees = ['Max Müller', 'Anna Schmidt', 'Thomas Weber', 'Lisa Meyer', 'Peter Koch'];
-    const stmt = db.prepare('INSERT OR IGNORE INTO employees (name) VALUES (?)');
-    defaultEmployees.forEach(name => stmt.run(name));
+    // Standard-Mitarbeiter mit Passwörtern einfügen
+    const defaultEmployees = [
+        { name: 'Max Müller', password: 'max123' },
+        { name: 'Anna Schmidt', password: 'anna123' },
+        { name: 'Thomas Weber', password: 'thomas123' },
+        { name: 'Lisa Meyer', password: 'lisa123' },
+        { name: 'Peter Koch', password: 'peter123' }
+    ];
+    const stmt = db.prepare('INSERT OR IGNORE INTO employees (name, password) VALUES (?, ?)');
+    defaultEmployees.forEach(emp => stmt.run(emp.name, emp.password));
     stmt.finalize();
 }
 
 // API Endpoints
+
+// Chef Login
+app.post('/api/login/chef', (req, res) => {
+    const { password } = req.body;
+    
+    if (password === 'Bauer') {
+        res.json({ success: true, role: 'chef' });
+    } else {
+        res.status(401).json({ success: false, error: 'Falsches Passwort' });
+    }
+});
+
+// Mitarbeiter Login
+app.post('/api/login/mitarbeiter', (req, res) => {
+    const { name, password } = req.body;
+    
+    if (!name || !password) {
+        res.status(400).json({ error: 'Name und Passwort erforderlich' });
+        return;
+    }
+
+    db.get('SELECT * FROM employees WHERE name = ? AND password = ?', [name, password], (err, row) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        
+        if (row) {
+            res.json({ success: true, role: 'mitarbeiter', name: row.name });
+        } else {
+            res.status(401).json({ success: false, error: 'Falscher Name oder Passwort' });
+        }
+    });
+});
 
 // Mitarbeiter abrufen
 app.get('/api/employees', (req, res) => {
@@ -93,14 +134,14 @@ app.get('/api/employees', (req, res) => {
 
 // Mitarbeiter hinzufügen
 app.post('/api/employees', (req, res) => {
-    const { name } = req.body;
+    const { name, password } = req.body;
     
-    if (!name || !name.trim()) {
-        res.status(400).json({ error: 'Name erforderlich' });
+    if (!name || !name.trim() || !password || !password.trim()) {
+        res.status(400).json({ error: 'Name und Passwort erforderlich' });
         return;
     }
 
-    db.run('INSERT INTO employees (name) VALUES (?)', [name.trim()], function(err) {
+    db.run('INSERT INTO employees (name, password) VALUES (?, ?)', [name.trim(), password.trim()], function(err) {
         if (err) {
             if (err.message.includes('UNIQUE')) {
                 res.status(400).json({ error: 'Mitarbeiter existiert bereits' });
@@ -110,6 +151,50 @@ app.post('/api/employees', (req, res) => {
             return;
         }
         res.json({ id: this.lastID, name: name.trim() });
+    });
+});
+
+// Mitarbeiter löschen
+app.delete('/api/employees/:id', (req, res) => {
+    const { id } = req.params;
+
+    db.run('DELETE FROM employees WHERE id = ?', [id], function(err) {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+
+        if (this.changes === 0) {
+            res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+            return;
+        }
+
+        res.json({ success: true, deleted: this.changes });
+    });
+});
+
+// Mitarbeiter-Passwort ändern
+app.put('/api/employees/:id/password', (req, res) => {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password || !password.trim()) {
+        res.status(400).json({ error: 'Passwort erforderlich' });
+        return;
+    }
+
+    db.run('UPDATE employees SET password = ? WHERE id = ?', [password.trim(), id], function(err) {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+
+        if (this.changes === 0) {
+            res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+            return;
+        }
+
+        res.json({ success: true });
     });
 });
 
