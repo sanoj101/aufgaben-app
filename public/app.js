@@ -160,6 +160,11 @@ function logout() {
     currentEmployee = '';
     localStorage.removeItem('login');
     
+    // Auto-Update stoppen
+    if (window.autoUpdateInterval) {
+        clearInterval(window.autoUpdateInterval);
+    }
+    
     document.getElementById('mainApp').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'block';
     
@@ -179,10 +184,22 @@ function showMainApp() {
     
     if (userRole === 'chef') {
         currentRole = 'chef';
+        currentEmployee = 'Chef'; // Chef kann auch Push-Benachrichtigungen empfangen
         document.getElementById('chefView').style.display = 'block';
         document.getElementById('mitarbeiterView').style.display = 'none';
         document.getElementById('employeeSelector').style.display = 'none';
         loadEmployeeManagement();
+        
+        // Chef kann auch Push-Benachrichtigungen aktivieren
+        setTimeout(() => {
+            if (Notification.permission === 'default') {
+                if (confirm('Möchten Sie Benachrichtigungen aktivieren?\n\nSie werden benachrichtigt wenn:\n• Eine Aufgabe erledigt wurde\n• Ein Foto hinzugefügt wurde\n• Eine Aufgabe wieder geöffnet wurde')) {
+                    enableNotifications();
+                }
+            } else if (Notification.permission === 'granted') {
+                subscribeToPush();
+            }
+        }, 2000);
     } else {
         currentRole = 'mitarbeiter';
         document.getElementById('chefView').style.display = 'none';
@@ -190,9 +207,26 @@ function showMainApp() {
         document.getElementById('employeeSelector').style.display = 'none';
         // Rolle-Switcher ausblenden für Mitarbeiter
         document.querySelectorAll('.role-selector')[1].style.display = 'none';
+        
+        // Mitarbeiter: Push-Benachrichtigungen automatisch anbieten
+        setTimeout(() => {
+            if (Notification.permission === 'default') {
+                if (confirm('Möchten Sie Benachrichtigungen für neue Aufgaben aktivieren?')) {
+                    enableNotifications();
+                }
+            } else if (Notification.permission === 'granted') {
+                subscribeToPush();
+            }
+        }, 2000);
     }
     
     loadTasks();
+    
+    // Automatische Aktualisierung alle 10 Sekunden
+    if (window.autoUpdateInterval) {
+        clearInterval(window.autoUpdateInterval);
+    }
+    window.autoUpdateInterval = setInterval(loadTasks, 10000);
 }
 
 // Online-Status aktualisieren
@@ -599,6 +633,19 @@ function displayTasksForChef(tasks) {
                         <img src="${task.photo}" alt="Nachweis-Foto">
                     </div>
                 ` : ''}
+                ${task.status === 'open' ? `
+                    <div class="task-actions">
+                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-chef-${task.id}').click()">📷 Foto hinzufügen</button>
+                        <input type="file" id="photo-chef-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
+                        <button class="action-btn" style="background: #e74c3c; color: white;" onclick="deleteTask(${task.id}, '${escapeHtml(task.title)}')">🗑️ Löschen</button>
+                    </div>
+                ` : ''}
+                ${task.status === 'completed' ? `
+                    <div class="task-actions">
+                        <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
+                        <button class="action-btn" style="background: #e74c3c; color: white;" onclick="deleteTask(${task.id}, '${escapeHtml(task.title)}')">🗑️ Löschen</button>
+                    </div>
+                ` : ''}
             </div>
         `;
     }).join('');
@@ -650,6 +697,11 @@ function displayTasksForEmployee(tasks) {
                         <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
                     </div>
                 ` : ''}
+                ${task.status === 'completed' ? `
+                    <div class="task-actions">
+                        <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
+                    </div>
+                ` : ''}
             </div>
         `;
     }).join('');
@@ -671,6 +723,46 @@ async function completeTask(taskId) {
     } catch (error) {
         console.error('Fehler:', error);
         showNotification('Fehler beim Aktualisieren', 'error');
+    }
+}
+
+// Aufgabe wieder öffnen
+async function reopenTask(taskId) {
+    try {
+        const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'open' })
+        });
+
+        if (!response.ok) throw new Error('Fehler beim Aktualisieren');
+
+        await loadTasks();
+        showNotification('Aufgabe wieder geöffnet! 🔄');
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification('Fehler beim Aktualisieren', 'error');
+    }
+}
+
+// Aufgabe löschen
+async function deleteTask(taskId, title) {
+    if (!confirm(`Aufgabe wirklich löschen?\n\n"${title}"\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) throw new Error('Fehler beim Löschen');
+
+        await loadTasks();
+        showNotification('Aufgabe gelöscht! 🗑️');
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification('Fehler beim Löschen', 'error');
     }
 }
 

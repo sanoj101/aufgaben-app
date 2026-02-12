@@ -284,6 +284,8 @@ app.put('/api/tasks/:id', (req, res) => {
         
         if (status === 'completed') {
             updates.push('completed_at = CURRENT_TIMESTAMP');
+        } else if (status === 'open') {
+            updates.push('completed_at = NULL');
         }
     }
 
@@ -308,6 +310,52 @@ app.put('/api/tasks/:id', (req, res) => {
 
         if (this.changes === 0) {
             res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+            return;
+        }
+
+        // Hole Aufgaben-Details für Push-Benachrichtigung
+        db.get('SELECT * FROM tasks WHERE id = ?', [id], (err, task) => {
+            if (err || !task) {
+                res.json({ success: true, changes: this.changes });
+                return;
+            }
+
+            // Push-Benachrichtigung an Chef senden bei Statusänderung oder Foto
+            if (status === 'completed') {
+                // Benachrichtige Chef dass Aufgabe erledigt wurde
+                sendPushToChef({
+                    title: '✅ Aufgabe erledigt',
+                    body: `${task.employee}: ${task.title}`,
+                    taskId: id
+                });
+            } else if (photo) {
+                // Benachrichtige Chef dass Foto hinzugefügt wurde
+                sendPushToChef({
+                    title: '📷 Foto hinzugefügt',
+                    body: `${task.employee}: ${task.title}`,
+                    taskId: id
+                });
+            } else if (status === 'open') {
+                // Benachrichtige Chef dass Aufgabe wieder geöffnet wurde
+                sendPushToChef({
+                    title: '🔄 Aufgabe wieder geöffnet',
+                    body: `${task.employee}: ${task.title}`,
+                    taskId: id
+                });
+            }
+        });
+
+        res.json({ success: true, changes: this.changes });
+    });
+});
+
+// Aufgabe löschen
+app.delete('/api/tasks/:id', (req, res) => {
+    const { id } = req.params;
+
+    db.run('DELETE FROM tasks WHERE id = ?', [id], function(err) {
+        if (err) {
+            res.status(500).json({ error: err.message });
             return;
         }
 
@@ -420,6 +468,35 @@ async function sendPushNotification(employee, data) {
             // Ungültige Subscription entfernen
             if (error.statusCode === 410) {
                 db.run('DELETE FROM subscriptions WHERE employee = ?', [employee]);
+            }
+        }
+    });
+}
+
+// Hilfsfunktion: Push-Benachrichtigung an Chef senden
+async function sendPushToChef(data) {
+    db.get('SELECT * FROM subscriptions WHERE employee = ?', ['Chef'], async (err, row) => {
+        if (err || !row) {
+            console.log('Keine Push-Subscription für Chef');
+            return;
+        }
+
+        const subscription = {
+            endpoint: row.endpoint,
+            keys: JSON.parse(row.keys)
+        };
+
+        const payload = JSON.stringify(data);
+
+        try {
+            await webpush.sendNotification(subscription, payload);
+            console.log('✓ Push-Benachrichtigung an Chef gesendet');
+        } catch (error) {
+            console.error('Fehler beim Senden der Push-Benachrichtigung an Chef:', error);
+            
+            // Ungültige Subscription entfernen
+            if (error.statusCode === 410) {
+                db.run('DELETE FROM subscriptions WHERE employee = ?', ['Chef']);
             }
         }
     });
