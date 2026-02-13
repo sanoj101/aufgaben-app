@@ -455,8 +455,8 @@ function displayTasksForChef(tasks) {
                 ` : ''}
                 <div class="task-actions">
                     ${task.status === 'open' ? `
-                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-chef-${task.id}').click()">📷 ${task.photo ? 'Weiteres' : ''} Foto</button>
-                        <input type="file" id="photo-chef-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)" multiple>
+                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-chef-${task.id}').click()">📷 Foto ${task.photo ? 'ändern' : 'hinzufügen'}</button>
+                        <input type="file" id="photo-chef-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
                     ` : ''}
                     ${task.status === 'completed' ? `
                         <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
@@ -510,8 +510,8 @@ function displayTasksForEmployee(tasks) {
                 <div class="task-actions">
                     ${task.status === 'open' ? `
                         <button class="action-btn complete-btn" onclick="completeTask(${task.id})">✓ Erledigt</button>
-                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()">📷 ${task.photo ? 'Weiteres' : ''} Foto</button>
-                        <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)" multiple>
+                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()">📷 Foto ${task.photo ? 'ändern' : 'hinzufügen'}</button>
+                        <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
                     ` : ''}
                     ${task.status === 'completed' ? `
                         <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
@@ -598,47 +598,39 @@ async function deleteTask(taskId, title) {
     }
 }
 
-// Foto hinzufügen (kann mehrere sein)
+// Foto hinzufügen
 async function addPhoto(taskId, event) {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    for (let file of files) {
-        // Größenprüfung (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-            showNotification(`Foto "${file.name}" zu groß (max. 10MB)`, 'error');
-            continue;
-        }
-
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            try {
-                // Hole aktuelle Aufgabe
-                const task = allTasks.find(t => t.id === taskId);
-                let newPhoto = e.target.result;
-                
-                // Falls schon ein Foto vorhanden, füge neues hinzu (getrennt durch |||)
-                if (task && task.photo) {
-                    newPhoto = task.photo + '|||' + e.target.result;
-                }
-                
-                const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ photo: newPhoto })
-                });
-
-                if (!response.ok) throw new Error('Fehler beim Hochladen');
-
-                await loadTasks();
-                showNotification('Foto hinzugefügt! 📷');
-            } catch (error) {
-                console.error('Fehler:', error);
-                showNotification('Fehler beim Hochladen', 'error');
-            }
-        };
-        reader.readAsDataURL(file);
+    // Nur ein Foto auf einmal verarbeiten
+    const file = files[0];
+    
+    // Größenprüfung (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        showNotification(`Foto zu groß (max. 10MB)`, 'error');
+        return;
     }
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ photo: e.target.result })
+            });
+
+            if (!response.ok) throw new Error('Fehler beim Hochladen');
+
+            await loadTasks();
+            showNotification('Foto hinzugefügt! 📷');
+        } catch (error) {
+            console.error('Fehler:', error);
+            showNotification('Fehler beim Hochladen', 'error');
+        }
+    };
+    reader.readAsDataURL(file);
 }
 
 // Überfälligkeit prüfen
@@ -762,10 +754,12 @@ async function addEmployee(event) {
         }
         
         document.getElementById('addEmployeeForm').reset();
+        
+        // Lade alles neu
         await loadEmployees();
-        loadEmployeeManagement();
-        loadEmployeesForSelect();
-        showLoginButtons(); // Login-Buttons aktualisieren
+        await loadEmployeeManagement();
+        await loadEmployeesForSelect();
+        
         showNotification(`Mitarbeiter "${name}" erfolgreich angelegt! ✓`);
     } catch (error) {
         console.error('Fehler:', error);
@@ -786,9 +780,10 @@ async function deleteEmployee(id, name) {
         
         if (!response.ok) throw new Error('Fehler beim Löschen');
         
+        // Lade alles neu
         await loadEmployees();
-        loadEmployeeManagement();
-        loadEmployeesForSelect();
+        await loadEmployeeManagement();
+        await loadEmployeesForSelect();
         showNotification(`Mitarbeiter "${name}" gelöscht`);
     } catch (error) {
         console.error('Fehler:', error);
