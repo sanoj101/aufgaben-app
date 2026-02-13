@@ -71,10 +71,52 @@
             50% { opacity: 0.5; }
         }
 
-        .role-selector {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
+        .login-user-btn {
+            padding: 30px 20px;
+            border: 2px solid #ecf0f1;
+            background: white;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .login-user-btn:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            border-color: #3498db;
+        }
+
+        .login-user-btn.chef-btn {
+            border-color: #3498db;
+            background: #ebf5fb;
+        }
+
+        .login-user-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .login-user-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .password-prompt {
+            max-width: 400px;
+            margin: 20px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .password-prompt h2 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+            text-align: center;
         }
 
         .role-btn {
@@ -97,53 +139,6 @@
         .role-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(52,152,219,0.3);
-        }
-
-        .employee-selector {
-            margin-top: 15px;
-            padding: 15px;
-            background: #ecf0f1;
-            border-radius: 8px;
-        }
-
-        .employee-selector label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-
-        .employee-selector select {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #bdc3c7;
-            border-radius: 6px;
-            font-size: 16px;
-        }
-
-        .notification-toggle {
-            margin-top: 10px;
-            padding: 10px;
-            background: #fff3cd;
-            border: 2px solid #ffc107;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .notification-toggle button {
-            padding: 8px 16px;
-            background: #ffc107;
-            color: #000;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-        }
-
-        .notification-toggle button:hover {
-            background: #ffb300;
         }
 
         .task-form {
@@ -380,19 +375,30 @@
 
         .task-photo {
             margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
         }
 
         .task-photo img {
-            max-width: 300px;
-            max-height: 300px;
+            max-width: 200px;
+            max-height: 200px;
             border-radius: 8px;
             border: 2px solid #ecf0f1;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .task-photo img:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
 
         .task-actions {
             margin-top: 15px;
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         .action-btn {
@@ -543,10 +549,6 @@
                 font-size: 24px;
             }
 
-            .role-selector {
-                flex-direction: column;
-            }
-
             .priority-selector {
                 flex-direction: column;
             }
@@ -559,6 +561,11 @@
             .filter-buttons {
                 flex-direction: column;
             }
+
+            .task-photo img {
+                max-width: 150px;
+                max-height: 150px;
+            }
         }
     </style>
 </head>
@@ -567,42 +574,9 @@
         <!-- Login Screen -->
         <div id="loginScreen" class="header">
             <h1>📋 Aufgabenverwaltung</h1>
-            <p style="margin: 10px 0; color: #7f8c8d;">Bitte anmelden</p>
+            <p style="margin: 10px 0; color: #7f8c8d;">Wählen Sie Ihren Namen:</p>
             
-            <div class="role-selector">
-                <button class="role-btn active" onclick="switchLoginRole('chef')">👔 Chef</button>
-                <button class="role-btn" onclick="switchLoginRole('mitarbeiter')">👷 Mitarbeiter</button>
-            </div>
-
-            <!-- Chef Login -->
-            <div id="chefLogin" class="task-form" style="margin-top: 20px;">
-                <h2>👔 Chef Login</h2>
-                <form onsubmit="loginChef(event)">
-                    <div class="form-group">
-                        <label>Passwort</label>
-                        <input type="password" id="chefPassword" required placeholder="Passwort eingeben">
-                    </div>
-                    <button type="submit" class="submit-btn">Anmelden</button>
-                </form>
-            </div>
-
-            <!-- Mitarbeiter Login -->
-            <div id="mitarbeiterLogin" class="task-form" style="margin-top: 20px; display: none;">
-                <h2>👷 Mitarbeiter Login</h2>
-                <form onsubmit="loginMitarbeiter(event)">
-                    <div class="form-group">
-                        <label>Name</label>
-                        <select id="mitarbeiterName" required>
-                            <option value="">-- Mitarbeiter wählen --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Passwort</label>
-                        <input type="password" id="mitarbeiterPassword" required placeholder="Passwort eingeben">
-                    </div>
-                    <button type="submit" class="submit-btn">Anmelden</button>
-                </form>
-            </div>
+            <div id="loginButtons"></div>
         </div>
 
         <!-- Main App (versteckt bis Login) -->
@@ -614,26 +588,9 @@
                 Verbunden
             </span>
             
-            <div style="margin-top: 15px; display: flex; align-items: center; gap: 15px;">
+            <div style="margin-top: 15px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                 <span id="userInfo" style="font-weight: 600; color: #2c3e50;"></span>
                 <button class="role-btn" onclick="logout()" style="background: #e74c3c; color: white; border-color: #e74c3c;">Abmelden</button>
-            </div>
-            
-            <div class="role-selector">
-                <button class="role-btn active" onclick="switchRole('chef')">👔 Chef</button>
-                <button class="role-btn" onclick="switchRole('mitarbeiter')">👷 Mitarbeiter</button>
-            </div>
-            
-            <div class="employee-selector" id="employeeSelector" style="display: none;">
-                <label>Mitarbeiter auswählen:</label>
-                <select id="currentEmployee" onchange="onEmployeeChange()">
-                    <option value="">-- Mitarbeiter wählen --</option>
-                </select>
-                <div class="notification-toggle" id="notificationToggle" style="display: none;">
-                    <span>🔔 Benachrichtigungen:</span>
-                    <button onclick="enableNotifications()">Aktivieren</button>
-                    <span id="notificationStatus"></span>
-                </div>
             </div>
         </div>
 
@@ -676,6 +633,13 @@
                     <span class="task-count" id="taskCount">0 Aufgaben</span>
                 </h2>
                 
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label>Nach Mitarbeiter filtern</label>
+                    <select id="filterEmployee" onchange="filterByEmployee(this.value)" style="max-width: 300px;">
+                        <option value="all">Alle Mitarbeiter</option>
+                    </select>
+                </div>
+                
                 <div class="filter-buttons">
                     <button class="filter-btn active" onclick="filterTasks('all')">Alle</button>
                     <button class="filter-btn" onclick="filterTasks('open')">Offen</button>
@@ -691,9 +655,9 @@
             <div class="task-form">
                 <h2>👥 Mitarbeiterverwaltung</h2>
                 
-                <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                <div style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;">
                     <!-- Mitarbeiter anlegen -->
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 300px;">
                         <h3 style="margin-bottom: 15px; color: #2c3e50;">➕ Neuer Mitarbeiter</h3>
                         <form id="addEmployeeForm" onsubmit="addEmployee(event)">
                             <div class="form-group">
@@ -709,9 +673,9 @@
                     </div>
 
                     <!-- Mitarbeiterliste -->
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 300px;">
                         <h3 style="margin-bottom: 15px; color: #2c3e50;">👷 Aktuelle Mitarbeiter</h3>
-                        <div id="employeeList" style="max-height: 300px; overflow-y: auto;"></div>
+                        <div id="employeeList" style="max-height: 400px; overflow-y: auto;"></div>
                     </div>
                 </div>
             </div>
