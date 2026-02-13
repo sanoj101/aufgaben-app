@@ -38,10 +38,10 @@ async function init() {
             const registration = await navigator.serviceWorker.register('/sw.js');
             console.log('✓ Service Worker registriert');
             
-            // Prüfe auf Updates alle 60 Sekunden
+            // Prüfe auf Updates alle 30 Sekunden
             setInterval(() => {
                 registration.update();
-            }, 60000);
+            }, 30000);
             
             // Wenn neuer Service Worker verfügbar, lade Seite neu
             registration.addEventListener('updatefound', () => {
@@ -53,6 +53,54 @@ async function init() {
                     }
                 });
             });
+            
+            // Empfange Messages vom Service Worker
+            navigator.serviceWorker.addEventListener('message', event => {
+                console.log('Message from SW:', event.data);
+                
+                if (event.data && event.data.type === 'PUSH_RECEIVED') {
+                    // Neue Push-Benachrichtigung → Daten neu laden
+                    loadTasks();
+                }
+                
+                if (event.data && event.data.type === 'SYNC_TASKS') {
+                    // Background Sync → Daten neu laden
+                    loadTasks();
+                }
+            });
+            
+            // Wake Lock API - hält Gerät wach (Android)
+            if ('wakeLock' in navigator && isLoggedIn) {
+                try {
+                    let wakeLock = null;
+                    
+                    const requestWakeLock = async () => {
+                        try {
+                            wakeLock = await navigator.wakeLock.request('screen');
+                            console.log('✓ Wake Lock aktiviert');
+                            
+                            wakeLock.addEventListener('release', () => {
+                                console.log('Wake Lock released');
+                            });
+                        } catch (err) {
+                            console.log('Wake Lock nicht verfügbar:', err);
+                        }
+                    };
+                    
+                    // Wake Lock bei Sichtbarkeit
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState === 'visible') {
+                            requestWakeLock();
+                        }
+                    });
+                    
+                    // Initial aktivieren
+                    requestWakeLock();
+                } catch (err) {
+                    console.log('Wake Lock API nicht unterstützt');
+                }
+            }
+            
         } catch (error) {
             console.error('Service Worker Fehler:', error);
         }
@@ -305,20 +353,30 @@ async function enableNotifications() {
 
 // Push-Subscription erstellen
 async function subscribeToPush() {
+    if (!vapidPublicKey) {
+        console.error('VAPID Key nicht verfügbar');
+        return;
+    }
+    
     try {
         const registration = await navigator.serviceWorker.ready;
         
+        // Prüfe ob bereits subscribed
         let subscription = await registration.pushManager.getSubscription();
         
         if (!subscription) {
+            console.log('Erstelle neue Push-Subscription...');
             subscription = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
             });
+            console.log('✓ Push-Subscription erstellt');
+        } else {
+            console.log('✓ Push-Subscription existiert bereits');
         }
 
         // Subscription an Server senden
-        await fetch(`${API_URL}/api/subscribe`, {
+        const response = await fetch(`${API_URL}/api/subscribe`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -327,9 +385,29 @@ async function subscribeToPush() {
             })
         });
 
-        console.log('✓ Push-Subscription gespeichert');
+        if (!response.ok) {
+            throw new Error('Fehler beim Speichern der Subscription');
+        }
+
+        console.log('✓ Push-Subscription am Server gespeichert');
+        
+        // Teste Push-Benachrichtigung
+        if (Notification.permission === 'granted') {
+            new Notification('✅ Benachrichtigungen aktiviert', {
+                body: 'Sie erhalten ab jetzt Push-Benachrichtigungen',
+                icon: '/icon-192.png',
+                badge: '/icon-96.png'
+            });
+        }
+        
     } catch (error) {
         console.error('Fehler bei Push-Subscription:', error);
+        
+        // Retry nach 5 Sekunden
+        setTimeout(() => {
+            console.log('Versuche Push-Subscription erneut...');
+            subscribeToPush();
+        }, 5000);
     }
 }
 

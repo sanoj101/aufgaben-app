@@ -1,6 +1,7 @@
 // Service Worker für Push-Benachrichtigungen und PWA-Funktionalität
+// Optimiert für maximale Zuverlässigkeit
 
-const CACHE_NAME = 'aufgaben-app-v4';
+const CACHE_NAME = 'aufgaben-app-v5';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -8,60 +9,64 @@ const urlsToCache = [
     '/manifest.json'
 ];
 
-// Installation
+// Installation - sofort übernehmen
 self.addEventListener('install', event => {
-    // Übernehme sofort die Kontrolle
-    self.skipWaiting();
+    console.log('[SW] Installing...');
+    self.skipWaiting(); // Sofort aktivieren
     
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
-                console.log('Cache geöffnet');
+                console.log('[SW] Caching files');
                 return cache.addAll(urlsToCache);
             })
+            .catch(err => console.error('[SW] Cache error:', err))
     );
 });
 
-// Aktivierung
+// Aktivierung - alte Caches löschen
 self.addEventListener('activate', event => {
+    console.log('[SW] Activating...');
+    
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
                 cacheNames.map(cacheName => {
                     if (cacheName !== CACHE_NAME) {
-                        console.log('Alter Cache gelöscht:', cacheName);
+                        console.log('[SW] Deleting old cache:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
             );
         }).then(() => {
-            // Übernehme sofort Kontrolle über alle Clients
-            return self.clients.claim();
+            console.log('[SW] Claiming clients');
+            return self.clients.claim(); // Sofort Kontrolle übernehmen
         })
     );
 });
 
-// Fetch (Network-First für API-Calls)
+// Fetch - Network First für API
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
     
     // API-Calls: Immer vom Netzwerk, NIE cachen
     if (url.pathname.startsWith('/api/')) {
         event.respondWith(
-            fetch(event.request).catch(() => {
-                return new Response(JSON.stringify({ error: 'Offline' }), {
-                    headers: { 'Content-Type': 'application/json' }
-                });
-            })
+            fetch(event.request)
+                .catch(() => {
+                    return new Response(JSON.stringify({ error: 'Offline' }), {
+                        headers: { 'Content-Type': 'application/json' },
+                        status: 503
+                    });
+                })
         );
         return;
     }
     
-    // Für statische Assets: Network-First (nicht Cache-First!)
+    // Für statische Assets: Network First
     event.respondWith(
         fetch(event.request)
             .then(response => {
-                // Wenn erfolgreich, cache es
                 if (response && response.status === 200) {
                     const responseToCache = response.clone();
                     caches.open(CACHE_NAME).then(cache => {
@@ -71,54 +76,48 @@ self.addEventListener('fetch', event => {
                 return response;
             })
             .catch(() => {
-                // Nur wenn offline, nutze Cache
                 return caches.match(event.request).then(response => {
-                    return response || new Response('Offline');
+                    return response || new Response('Offline', { status: 503 });
                 });
             })
     );
 });
 
-// Push-Benachrichtigungen empfangen
+// Push-Benachrichtigungen - OPTIMIERT!
 self.addEventListener('push', event => {
-    console.log('Push-Nachricht empfangen:', event);
-
-    let data = {
-        title: 'Neue Aufgabe',
-        body: 'Sie haben eine neue Aufgabe erhalten',
-        icon: '/icon-192.png',
-        badge: '/icon-72.png'
-    };
-
-    if (event.data) {
-        try {
-            const pushData = event.data.json();
-            data = {
-                title: pushData.title || data.title,
-                body: pushData.body || data.body,
-                icon: data.icon,
-                badge: data.badge,
-                data: {
-                    taskId: pushData.taskId,
-                    priority: pushData.priority
-                }
-            };
-        } catch (e) {
-            console.error('Fehler beim Parsen der Push-Daten:', e);
-        }
+    console.log('[SW] Push received!', event.data);
+    
+    let data;
+    try {
+        data = event.data ? event.data.json() : {};
+    } catch (e) {
+        console.error('[SW] Invalid push data:', e);
+        data = {
+            title: 'Neue Benachrichtigung',
+            body: event.data ? event.data.text() : 'Neue Aufgabe'
+        };
     }
-
+    
+    const title = data.title || '📋 Neue Aufgabe';
     const options = {
-        body: data.body,
-        icon: data.icon,
-        badge: data.badge,
-        vibrate: [200, 100, 200],
-        data: data.data,
-        requireInteraction: true,
+        body: data.body || 'Sie haben eine neue Aufgabe',
+        icon: '/icon-192.png',
+        badge: '/icon-96.png',
+        vibrate: [200, 100, 200, 100, 200],
+        tag: 'aufgabe-' + (data.taskId || Date.now()),
+        requireInteraction: true, // Bleibt bis User klickt (wichtig!)
+        renotify: true,
+        silent: false,
+        timestamp: Date.now(),
+        data: {
+            taskId: data.taskId,
+            url: '/',
+            timestamp: Date.now()
+        },
         actions: [
             {
                 action: 'open',
-                title: 'Aufgabe ansehen'
+                title: 'Öffnen'
             },
             {
                 action: 'close',
@@ -128,17 +127,90 @@ self.addEventListener('push', event => {
     };
 
     event.waitUntil(
-        self.registration.showNotification(data.title, options)
+        self.registration.showNotification(title, options)
+            .then(() => {
+                console.log('[SW] ✓ Notification shown successfully');
+                
+                // Wake up all clients
+                return self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+            })
+            .then(clients => {
+                // Benachrichtige alle Tabs dass neue Daten da sind
+                clients.forEach(client => {
+                    client.postMessage({
+                        type: 'PUSH_RECEIVED',
+                        data: data
+                    });
+                });
+            })
+            .catch(err => {
+                console.error('[SW] ✗ Notification failed:', err);
+            })
     );
 });
 
-// Benachrichtigungs-Klick
+// Notification Click
 self.addEventListener('notificationclick', event => {
+    console.log('[SW] Notification clicked:', event.action);
     event.notification.close();
+    
+    if (event.action === 'close') {
+        return;
+    }
+    
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+            .then(clientList => {
+                // Wenn App bereits offen, fokussiere sie
+                for (let client of clientList) {
+                    if ('focus' in client) {
+                        return client.focus();
+                    }
+                }
+                // Sonst öffne neues Fenster
+                if (self.clients.openWindow) {
+                    return self.clients.openWindow('/');
+                }
+            })
+    );
+});
 
-    if (event.action === 'open' || !event.action) {
+// Background Sync - für Offline-Aktionen
+self.addEventListener('sync', event => {
+    console.log('[SW] Background sync:', event.tag);
+    
+    if (event.tag === 'sync-tasks') {
         event.waitUntil(
-            clients.openWindow('/')
+            self.clients.matchAll({ includeUncontrolled: true })
+                .then(clients => {
+                    clients.forEach(client => {
+                        client.postMessage({ type: 'SYNC_TASKS' });
+                    });
+                })
         );
     }
 });
+
+// Message Handler
+self.addEventListener('message', event => {
+    console.log('[SW] Message received:', event.data);
+    
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+    
+    if (event.data && event.data.type === 'CLAIM_CLIENTS') {
+        self.clients.claim();
+    }
+    
+    if (event.data && event.data.type === 'CHECK_UPDATE') {
+        event.waitUntil(
+            self.registration.update()
+                .then(() => {
+                    console.log('[SW] Update check completed');
+                })
+        );
+    }
+});
+
+console.log('[SW] Service Worker loaded');
