@@ -468,7 +468,7 @@ app.get('/api/debug/subscriptions', (req, res) => {
 });
 
 // DEBUG: Test-Push senden
-app.post('/api/debug/test-push/:employee', async (req, res) => {
+app.get('/api/debug/test-push/:employee', async (req, res) => {
     const { employee } = req.params;
     
     try {
