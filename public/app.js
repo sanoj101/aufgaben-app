@@ -5,146 +5,156 @@ const API_URL = window.location.origin;
 let isLoggedIn = false;
 let userRole = '';
 let userName = '';
-let currentRole = 'chef';
 let currentEmployee = '';
 let selectedPriority = 'important';
 let currentFilter = 'all';
+let currentEmployeeFilter = 'all';
 let allTasks = [];
 let allEmployees = [];
 let vapidPublicKey = '';
 
 // Initialisierung
 async function init() {
+    await loadEmployees();
+    await loadVapidKey();
+    
     // Prüfe Login-Status
     const savedLogin = localStorage.getItem('login');
     if (savedLogin) {
         const login = JSON.parse(savedLogin);
         isLoggedIn = true;
         userRole = login.role;
-        userName = login.name || '';
+        userName = login.name || 'Chef';
+        currentEmployee = login.name || 'Chef';
         showMainApp();
-    }
-    
-    await loadEmployees();
-    await loadVapidKey();
-    
-    if (isLoggedIn) {
         await loadTasks();
+    } else {
+        showLoginButtons();
     }
     
     // Service Worker registrieren
     if ('serviceWorker' in navigator) {
         try {
-            const registration = await navigator.serviceWorker.register('/sw.js');
+            await navigator.serviceWorker.register('/sw.js');
             console.log('✓ Service Worker registriert');
         } catch (error) {
             console.error('Service Worker Fehler:', error);
         }
     }
 
-    // Periodisches Neuladen
-    if (isLoggedIn) {
-        setInterval(loadTasks, 30000); // Alle 30 Sekunden
-    }
-    
     // Online/Offline Status
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
     updateOnlineStatus();
 }
 
-// Login-Rolle wechseln
-function switchLoginRole(role) {
-    document.querySelectorAll('.role-selector .role-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
+// Online-Status aktualisieren
+function updateOnlineStatus() {
+    const indicator = document.getElementById('statusIndicator');
+    if (!indicator) return;
     
-    if (role === 'chef') {
-        document.getElementById('chefLogin').style.display = 'block';
-        document.getElementById('mitarbeiterLogin').style.display = 'none';
+    if (navigator.onLine) {
+        indicator.className = 'status-indicator';
+        indicator.innerHTML = '<span class="status-dot"></span> Verbunden';
+        if (isLoggedIn) loadTasks();
     } else {
-        document.getElementById('chefLogin').style.display = 'none';
-        document.getElementById('mitarbeiterLogin').style.display = 'block';
-        loadEmployeesForLogin();
+        indicator.className = 'status-indicator offline';
+        indicator.innerHTML = '<span class="status-dot"></span> Offline';
     }
 }
 
-// Mitarbeiter für Login laden
-async function loadEmployeesForLogin() {
+// VAPID Key laden
+async function loadVapidKey() {
+    try {
+        const response = await fetch(`${API_URL}/api/vapid-public-key`);
+        const data = await response.json();
+        vapidPublicKey = data.publicKey;
+    } catch (error) {
+        console.error('Fehler beim Laden des VAPID Keys:', error);
+    }
+}
+
+// Mitarbeiter laden
+async function loadEmployees() {
     try {
         const response = await fetch(`${API_URL}/api/employees`);
-        const employees = await response.json();
-        
-        const select = document.getElementById('mitarbeiterName');
-        select.innerHTML = '<option value="">-- Mitarbeiter wählen --</option>';
-        
-        employees.forEach(emp => {
-            const option = document.createElement('option');
-            option.value = emp.name;
-            option.textContent = emp.name;
-            select.appendChild(option);
-        });
+        allEmployees = await response.json();
     } catch (error) {
         console.error('Fehler beim Laden der Mitarbeiter:', error);
     }
 }
 
-// Chef Login
-async function loginChef(event) {
-    event.preventDefault();
+// Login-Buttons anzeigen
+function showLoginButtons() {
+    const loginScreen = document.getElementById('loginScreen');
+    const loginButtons = document.getElementById('loginButtons');
     
-    const password = document.getElementById('chefPassword').value;
-    
-    try {
-        const response = await fetch(`${API_URL}/api/login/chef`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            isLoggedIn = true;
-            userRole = 'chef';
-            userName = 'Chef';
-            localStorage.setItem('login', JSON.stringify({ role: 'chef' }));
-            showMainApp();
-            showNotification('Erfolgreich angemeldet! 👔');
-        } else {
-            showNotification('Falsches Passwort!', 'error');
-        }
-    } catch (error) {
-        console.error('Login-Fehler:', error);
-        showNotification('Login fehlgeschlagen', 'error');
-    }
+    loginButtons.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+            <button class="login-user-btn chef-btn" onclick="showPasswordPrompt('Chef', 'chef')">
+                <div class="login-user-icon">👔</div>
+                <div class="login-user-name">Chef</div>
+            </button>
+            ${allEmployees.map(emp => `
+                <button class="login-user-btn" onclick="showPasswordPrompt('${escapeHtml(emp.name)}', 'mitarbeiter')">
+                    <div class="login-user-icon">👷</div>
+                    <div class="login-user-name">${escapeHtml(emp.name)}</div>
+                </button>
+            `).join('')}
+        </div>
+    `;
 }
 
-// Mitarbeiter Login
-async function loginMitarbeiter(event) {
+// Passwort-Prompt anzeigen
+function showPasswordPrompt(name, role) {
+    const loginButtons = document.getElementById('loginButtons');
+    loginButtons.innerHTML = `
+        <div class="password-prompt">
+            <h2>Anmelden als ${escapeHtml(name)}</h2>
+            <form onsubmit="login(event, '${escapeHtml(name)}', '${role}')">
+                <div class="form-group">
+                    <label>Passwort</label>
+                    <input type="password" id="loginPassword" required placeholder="Passwort eingeben" autofocus>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="submit-btn">Anmelden</button>
+                    <button type="button" class="submit-btn" style="background: #95a5a6;" onclick="showLoginButtons()">Zurück</button>
+                </div>
+            </form>
+        </div>
+    `;
+}
+
+// Login
+async function login(event, name, role) {
     event.preventDefault();
     
-    const name = document.getElementById('mitarbeiterName').value;
-    const password = document.getElementById('mitarbeiterPassword').value;
+    const password = document.getElementById('loginPassword').value;
     
     try {
-        const response = await fetch(`${API_URL}/api/login/mitarbeiter`, {
+        const endpoint = role === 'chef' ? '/api/login/chef' : '/api/login/mitarbeiter';
+        const body = role === 'chef' ? { password } : { name, password };
+        
+        const response = await fetch(`${API_URL}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, password })
+            body: JSON.stringify(body)
         });
         
         const data = await response.json();
         
         if (data.success) {
             isLoggedIn = true;
-            userRole = 'mitarbeiter';
+            userRole = role;
             userName = name;
             currentEmployee = name;
-            localStorage.setItem('login', JSON.stringify({ role: 'mitarbeiter', name }));
+            localStorage.setItem('login', JSON.stringify({ role, name }));
             showMainApp();
-            showNotification('Erfolgreich angemeldet! 👷');
+            showNotification(`Willkommen, ${name}! 👋`);
         } else {
-            showNotification('Falscher Name oder Passwort!', 'error');
+            showNotification('Falsches Passwort!', 'error');
+            document.getElementById('loginPassword').value = '';
+            document.getElementById('loginPassword').focus();
         }
     } catch (error) {
         console.error('Login-Fehler:', error);
@@ -168,10 +178,7 @@ function logout() {
     document.getElementById('mainApp').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'block';
     
-    // Formulare zurücksetzen
-    document.getElementById('chefPassword').value = '';
-    document.getElementById('mitarbeiterPassword').value = '';
-    
+    showLoginButtons();
     showNotification('Erfolgreich abgemeldet');
 }
 
@@ -183,11 +190,9 @@ function showMainApp() {
     document.getElementById('userInfo').textContent = `Angemeldet als: ${userName}`;
     
     if (userRole === 'chef') {
-        currentRole = 'chef';
-        currentEmployee = 'Chef'; // Chef kann auch Push-Benachrichtigungen empfangen
         document.getElementById('chefView').style.display = 'block';
         document.getElementById('mitarbeiterView').style.display = 'none';
-        document.getElementById('employeeSelector').style.display = 'none';
+        loadEmployeesForSelect();
         loadEmployeeManagement();
         
         // Chef kann auch Push-Benachrichtigungen aktivieren
@@ -201,12 +206,8 @@ function showMainApp() {
             }
         }, 2000);
     } else {
-        currentRole = 'mitarbeiter';
         document.getElementById('chefView').style.display = 'none';
         document.getElementById('mitarbeiterView').style.display = 'block';
-        document.getElementById('employeeSelector').style.display = 'none';
-        // Rolle-Switcher ausblenden für Mitarbeiter
-        document.querySelectorAll('.role-selector')[1].style.display = 'none';
         
         // Mitarbeiter: Push-Benachrichtigungen automatisch anbieten
         setTimeout(() => {
@@ -229,222 +230,38 @@ function showMainApp() {
     window.autoUpdateInterval = setInterval(loadTasks, 10000);
 }
 
-// Online-Status aktualisieren
-function updateOnlineStatus() {
-    const indicator = document.getElementById('statusIndicator');
-    if (navigator.onLine) {
-        indicator.className = 'status-indicator';
-        indicator.innerHTML = '<span class="status-dot"></span> Verbunden';
-        loadTasks();
-    } else {
-        indicator.className = 'status-indicator offline';
-        indicator.innerHTML = '<span class="status-dot"></span> Offline';
-    }
-}
-
-// VAPID Key laden
-async function loadVapidKey() {
-    try {
-        const response = await fetch(`${API_URL}/api/vapid-public-key`);
-        const data = await response.json();
-        vapidPublicKey = data.publicKey;
-    } catch (error) {
-        console.error('Fehler beim Laden des VAPID Keys:', error);
-    }
-}
-
-// Mitarbeiter laden
-async function loadEmployees() {
-    try {
-        const response = await fetch(`${API_URL}/api/employees`);
-        allEmployees = await response.json();
-        
-        const assignSelect = document.getElementById('assignEmployee');
-        const currentSelect = document.getElementById('currentEmployee');
-        
-        if (assignSelect) {
-            assignSelect.innerHTML = '<option value="">-- Mitarbeiter wählen --</option>';
-            allEmployees.forEach(emp => {
-                const option = document.createElement('option');
-                option.value = emp.name;
-                option.textContent = emp.name;
-                assignSelect.appendChild(option);
-            });
-        }
-
-        if (currentSelect) {
-            currentSelect.innerHTML = '<option value="">-- Mitarbeiter wählen --</option>';
-            allEmployees.forEach(emp => {
-                const option = document.createElement('option');
-                option.value = emp.name;
-                option.textContent = emp.name;
-                currentSelect.appendChild(option);
-            });
-        }
-    } catch (error) {
-        console.error('Fehler beim Laden der Mitarbeiter:', error);
-        showNotification('Fehler beim Laden der Mitarbeiter', 'error');
-    }
-}
-
-// Mitarbeiterverwaltung laden
-async function loadEmployeeManagement() {
-    const employeeList = document.getElementById('employeeList');
-    if (!employeeList) return;
+// Mitarbeiter für Select laden
+function loadEmployeesForSelect() {
+    const assignSelect = document.getElementById('assignEmployee');
+    const filterSelect = document.getElementById('filterEmployee');
     
-    if (allEmployees.length === 0) {
-        employeeList.innerHTML = '<p style="color: #95a5a6; padding: 20px; text-align: center;">Keine Mitarbeiter vorhanden</p>';
-        return;
-    }
-    
-    employeeList.innerHTML = allEmployees.map(emp => `
-        <div class="employee-card">
-            <div class="employee-name">👷 ${escapeHtml(emp.name)}</div>
-            <div class="employee-actions">
-                <button class="employee-btn password" onclick="changeEmployeePassword(${emp.id}, '${escapeHtml(emp.name)}')">
-                    🔑 Passwort ändern
-                </button>
-                <button class="employee-btn delete" onclick="deleteEmployee(${emp.id}, '${escapeHtml(emp.name)}')">
-                    🗑️ Löschen
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
-
-// Mitarbeiter anlegen
-async function addEmployee(event) {
-    event.preventDefault();
-    
-    const name = document.getElementById('newEmployeeName').value.trim();
-    const password = document.getElementById('newEmployeePassword').value.trim();
-    
-    if (!name || !password) {
-        showNotification('Bitte Name und Passwort eingeben', 'error');
-        return;
-    }
-    
-    try {
-        const response = await fetch(`${API_URL}/api/employees`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, password })
+    if (assignSelect) {
+        assignSelect.innerHTML = '<option value="">-- Mitarbeiter wählen --</option><option value="Chef">Chef (selbst)</option>';
+        allEmployees.forEach(emp => {
+            const option = document.createElement('option');
+            option.value = emp.name;
+            option.textContent = emp.name;
+            assignSelect.appendChild(option);
         });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error);
-        }
-        
-        document.getElementById('addEmployeeForm').reset();
-        await loadEmployees();
-        loadEmployeeManagement();
-        showNotification(`Mitarbeiter "${name}" erfolgreich angelegt! ✓`);
-    } catch (error) {
-        console.error('Fehler:', error);
-        showNotification(error.message || 'Fehler beim Anlegen', 'error');
-    }
-}
-
-// Mitarbeiter löschen
-async function deleteEmployee(id, name) {
-    if (!confirm(`Mitarbeiter "${name}" wirklich löschen?\n\nAlle Aufgaben bleiben erhalten.`)) {
-        return;
     }
     
-    try {
-        const response = await fetch(`${API_URL}/api/employees/${id}`, {
-            method: 'DELETE'
+    if (filterSelect) {
+        filterSelect.innerHTML = '<option value="all">Alle Mitarbeiter</option><option value="Chef">Chef</option>';
+        allEmployees.forEach(emp => {
+            const option = document.createElement('option');
+            option.value = emp.name;
+            option.textContent = emp.name;
+            filterSelect.appendChild(option);
         });
-        
-        if (!response.ok) throw new Error('Fehler beim Löschen');
-        
-        await loadEmployees();
-        loadEmployeeManagement();
-        showNotification(`Mitarbeiter "${name}" gelöscht`);
-    } catch (error) {
-        console.error('Fehler:', error);
-        showNotification('Fehler beim Löschen', 'error');
     }
-}
-
-// Mitarbeiter-Passwort ändern
-async function changeEmployeePassword(id, name) {
-    const newPassword = prompt(`Neues Passwort für "${name}" eingeben:`);
-    
-    if (!newPassword || !newPassword.trim()) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(`${API_URL}/api/employees/${id}/password`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: newPassword.trim() })
-        });
-        
-        if (!response.ok) throw new Error('Fehler beim Ändern');
-        
-        showNotification(`Passwort für "${name}" geändert! 🔑`);
-    } catch (error) {
-        console.error('Fehler:', error);
-        showNotification('Fehler beim Ändern des Passworts', 'error');
-    }
-}
-
-// Rolle wechseln
-function switchRole(role) {
-    currentRole = role;
-    
-    document.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
-    
-    if (role === 'chef') {
-        document.getElementById('chefView').style.display = 'block';
-        document.getElementById('mitarbeiterView').style.display = 'none';
-        document.getElementById('employeeSelector').style.display = 'none';
-        currentFilter = 'all';
-    } else {
-        document.getElementById('chefView').style.display = 'none';
-        document.getElementById('mitarbeiterView').style.display = 'block';
-        document.getElementById('employeeSelector').style.display = 'block';
-        currentFilter = 'all';
-    }
-    
-    loadTasks();
-}
-
-// Mitarbeiter-Auswahl geändert
-function onEmployeeChange() {
-    currentEmployee = document.getElementById('currentEmployee').value;
-    
-    if (currentEmployee) {
-        document.getElementById('notificationToggle').style.display = 'flex';
-        checkNotificationPermission();
-    } else {
-        document.getElementById('notificationToggle').style.display = 'none';
-    }
-    
-    loadTasks();
 }
 
 // Benachrichtigungs-Berechtigung prüfen
 async function checkNotificationPermission() {
-    if (!('Notification' in window)) {
-        document.getElementById('notificationStatus').textContent = 'Nicht unterstützt';
-        return;
-    }
+    if (!('Notification' in window)) return;
 
     if (Notification.permission === 'granted') {
-        document.getElementById('notificationStatus').textContent = '✓ Aktiviert';
-        document.querySelector('#notificationToggle button').style.display = 'none';
-        
-        // Push-Subscription prüfen/erstellen
         await subscribeToPush();
-    } else if (Notification.permission === 'denied') {
-        document.getElementById('notificationStatus').textContent = '✗ Blockiert';
-    } else {
-        document.getElementById('notificationStatus').textContent = '';
     }
 }
 
@@ -461,7 +278,6 @@ async function enableNotifications() {
         if (permission === 'granted') {
             showNotification('Benachrichtigungen aktiviert! 🔔');
             await subscribeToPush();
-            checkNotificationPermission();
         } else {
             showNotification('Benachrichtigungen wurden abgelehnt', 'error');
         }
@@ -573,29 +389,33 @@ async function loadTasks() {
         const response = await fetch(`${API_URL}/api/tasks`);
         allTasks = await response.json();
         
-        if (currentRole === 'chef') {
+        if (userRole === 'chef') {
             displayTasksForChef(allTasks);
         } else {
-            if (!currentEmployee) {
-                document.getElementById('myTaskList').innerHTML = `
-                    <div class="empty-state">
-                        <h3>Bitte wählen Sie einen Mitarbeiter aus</h3>
-                    </div>
-                `;
-                return;
-            }
             const myTasks = allTasks.filter(t => t.employee === currentEmployee);
             displayTasksForEmployee(myTasks);
         }
     } catch (error) {
         console.error('Fehler beim Laden der Aufgaben:', error);
-        showNotification('Fehler beim Laden der Aufgaben', 'error');
     }
+}
+
+// Filter nach Mitarbeiter
+function filterByEmployee(employee) {
+    currentEmployeeFilter = employee;
+    displayTasksForChef(allTasks);
 }
 
 // Aufgaben für Chef anzeigen
 function displayTasksForChef(tasks) {
-    const filteredTasks = filterTasksArray(tasks);
+    // Filter nach Mitarbeiter
+    let filteredByEmployee = tasks;
+    if (currentEmployeeFilter !== 'all') {
+        filteredByEmployee = tasks.filter(t => t.employee === currentEmployeeFilter);
+    }
+    
+    // Filter nach Status
+    const filteredTasks = filterTasksArray(filteredByEmployee);
     const taskList = document.getElementById('taskList');
     
     document.getElementById('taskCount').textContent = `${filteredTasks.length} Aufgaben`;
@@ -604,7 +424,7 @@ function displayTasksForChef(tasks) {
         taskList.innerHTML = `
             <div class="empty-state">
                 <h3>Keine Aufgaben vorhanden</h3>
-                <p>Erstellen Sie die erste Aufgabe für Ihr Team</p>
+                <p>Erstellen Sie die erste Aufgabe</p>
             </div>
         `;
         return;
@@ -630,22 +450,19 @@ function displayTasksForChef(tasks) {
                 </div>
                 ${task.photo ? `
                     <div class="task-photo">
-                        <img src="${task.photo}" alt="Nachweis-Foto">
+                        <img src="${task.photo}" alt="Nachweis-Foto" onclick="viewFullImage('${task.photo}')">
                     </div>
                 ` : ''}
-                ${task.status === 'open' ? `
-                    <div class="task-actions">
-                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-chef-${task.id}').click()">📷 Foto hinzufügen</button>
-                        <input type="file" id="photo-chef-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
-                        <button class="action-btn" style="background: #e74c3c; color: white;" onclick="deleteTask(${task.id}, '${escapeHtml(task.title)}')">🗑️ Löschen</button>
-                    </div>
-                ` : ''}
-                ${task.status === 'completed' ? `
-                    <div class="task-actions">
+                <div class="task-actions">
+                    ${task.status === 'open' ? `
+                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-chef-${task.id}').click()">📷 ${task.photo ? 'Weiteres' : ''} Foto</button>
+                        <input type="file" id="photo-chef-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)" multiple>
+                    ` : ''}
+                    ${task.status === 'completed' ? `
                         <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
-                        <button class="action-btn" style="background: #e74c3c; color: white;" onclick="deleteTask(${task.id}, '${escapeHtml(task.title)}')">🗑️ Löschen</button>
-                    </div>
-                ` : ''}
+                    ` : ''}
+                    <button class="action-btn" style="background: #e74c3c; color: white;" onclick="deleteTask(${task.id}, '${escapeHtml(task.title).replace(/'/g, "\\'")}')">🗑️ Löschen</button>
+                </div>
             </div>
         `;
     }).join('');
@@ -687,24 +504,36 @@ function displayTasksForEmployee(tasks) {
                 </div>
                 ${task.photo ? `
                     <div class="task-photo">
-                        <img src="${task.photo}" alt="Nachweis-Foto">
+                        <img src="${task.photo}" alt="Nachweis-Foto" onclick="viewFullImage('${task.photo}')">
                     </div>
                 ` : ''}
-                ${task.status === 'open' ? `
-                    <div class="task-actions">
+                <div class="task-actions">
+                    ${task.status === 'open' ? `
                         <button class="action-btn complete-btn" onclick="completeTask(${task.id})">✓ Erledigt</button>
-                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()">📷 Foto hinzufügen</button>
-                        <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
-                    </div>
-                ` : ''}
-                ${task.status === 'completed' ? `
-                    <div class="task-actions">
+                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()">📷 ${task.photo ? 'Weiteres' : ''} Foto</button>
+                        <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)" multiple>
+                    ` : ''}
+                    ${task.status === 'completed' ? `
                         <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
-                    </div>
-                ` : ''}
+                    ` : ''}
+                </div>
             </div>
         `;
     }).join('');
+}
+
+// Vollbild-Foto anzeigen
+function viewFullImage(src) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+    overlay.onclick = () => overlay.remove();
+    
+    const img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;';
+    
+    overlay.appendChild(img);
+    document.body.appendChild(overlay);
 }
 
 // Aufgabe abschließen
@@ -756,46 +585,60 @@ async function deleteTask(taskId, title) {
             method: 'DELETE'
         });
 
-        if (!response.ok) throw new Error('Fehler beim Löschen');
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Fehler beim Löschen');
+        }
 
         await loadTasks();
         showNotification('Aufgabe gelöscht! 🗑️');
     } catch (error) {
         console.error('Fehler:', error);
-        showNotification('Fehler beim Löschen', 'error');
+        showNotification(error.message || 'Fehler beim Löschen', 'error');
     }
 }
 
-// Foto hinzufügen
+// Foto hinzufügen (kann mehrere sein)
 async function addPhoto(taskId, event) {
-    const file = event.target.files[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    // Größenprüfung (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-        showNotification('Foto zu groß (max. 10MB)', 'error');
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        try {
-            const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ photo: e.target.result })
-            });
-
-            if (!response.ok) throw new Error('Fehler beim Hochladen');
-
-            await loadTasks();
-            showNotification('Foto hinzugefügt! 📷');
-        } catch (error) {
-            console.error('Fehler:', error);
-            showNotification('Fehler beim Hochladen', 'error');
+    for (let file of files) {
+        // Größenprüfung (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            showNotification(`Foto "${file.name}" zu groß (max. 10MB)`, 'error');
+            continue;
         }
-    };
-    reader.readAsDataURL(file);
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                // Hole aktuelle Aufgabe
+                const task = allTasks.find(t => t.id === taskId);
+                let newPhoto = e.target.result;
+                
+                // Falls schon ein Foto vorhanden, füge neues hinzu (getrennt durch |||)
+                if (task && task.photo) {
+                    newPhoto = task.photo + '|||' + e.target.result;
+                }
+                
+                const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ photo: newPhoto })
+                });
+
+                if (!response.ok) throw new Error('Fehler beim Hochladen');
+
+                await loadTasks();
+                showNotification('Foto hinzugefügt! 📷');
+            } catch (error) {
+                console.error('Fehler:', error);
+                showNotification('Fehler beim Hochladen', 'error');
+            }
+        };
+        reader.readAsDataURL(file);
+    }
 }
 
 // Überfälligkeit prüfen
@@ -866,6 +709,114 @@ function filterTasksArray(tasks) {
             return tasks.filter(t => t.priority === 'important');
         default:
             return tasks;
+    }
+}
+
+// Mitarbeiterverwaltung laden
+async function loadEmployeeManagement() {
+    const employeeList = document.getElementById('employeeList');
+    if (!employeeList) return;
+    
+    if (allEmployees.length === 0) {
+        employeeList.innerHTML = '<p style="color: #95a5a6; padding: 20px; text-align: center;">Keine Mitarbeiter vorhanden</p>';
+        return;
+    }
+    
+    employeeList.innerHTML = allEmployees.map(emp => `
+        <div class="employee-card">
+            <div class="employee-name">👷 ${escapeHtml(emp.name)}</div>
+            <div class="employee-actions">
+                <button class="employee-btn password" onclick="changeEmployeePassword(${emp.id}, '${escapeHtml(emp.name).replace(/'/g, "\\'")}')">
+                    🔑 Passwort ändern
+                </button>
+                <button class="employee-btn delete" onclick="deleteEmployee(${emp.id}, '${escapeHtml(emp.name).replace(/'/g, "\\'")}')">
+                    🗑️ Löschen
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Mitarbeiter anlegen
+async function addEmployee(event) {
+    event.preventDefault();
+    
+    const name = document.getElementById('newEmployeeName').value.trim();
+    const password = document.getElementById('newEmployeePassword').value.trim();
+    
+    if (!name || !password) {
+        showNotification('Bitte Name und Passwort eingeben', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/employees`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, password })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error);
+        }
+        
+        document.getElementById('addEmployeeForm').reset();
+        await loadEmployees();
+        loadEmployeeManagement();
+        loadEmployeesForSelect();
+        showLoginButtons(); // Login-Buttons aktualisieren
+        showNotification(`Mitarbeiter "${name}" erfolgreich angelegt! ✓`);
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification(error.message || 'Fehler beim Anlegen', 'error');
+    }
+}
+
+// Mitarbeiter löschen
+async function deleteEmployee(id, name) {
+    if (!confirm(`Mitarbeiter "${name}" wirklich löschen?\n\nAlle Aufgaben bleiben erhalten.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/employees/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) throw new Error('Fehler beim Löschen');
+        
+        await loadEmployees();
+        loadEmployeeManagement();
+        loadEmployeesForSelect();
+        showNotification(`Mitarbeiter "${name}" gelöscht`);
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification('Fehler beim Löschen', 'error');
+    }
+}
+
+// Mitarbeiter-Passwort ändern
+async function changeEmployeePassword(id, name) {
+    const newPassword = prompt(`Neues Passwort für "${name}" eingeben:`);
+    
+    if (!newPassword || !newPassword.trim()) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/employees/${id}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: newPassword.trim() })
+        });
+        
+        if (!response.ok) throw new Error('Fehler beim Ändern');
+        
+        showNotification(`Passwort für "${name}" geändert! 🔑`);
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification('Fehler beim Ändern des Passworts', 'error');
     }
 }
 
