@@ -364,6 +364,8 @@ async function subscribeToPush() {
         // Prüfe ob bereits subscribed
         let subscription = await registration.pushManager.getSubscription();
         
+        const isNewSubscription = !subscription;
+        
         if (!subscription) {
             console.log('Erstelle neue Push-Subscription...');
             subscription = await registration.pushManager.subscribe({
@@ -389,25 +391,25 @@ async function subscribeToPush() {
             throw new Error('Fehler beim Speichern der Subscription');
         }
 
-        console.log('✓ Push-Subscription am Server gespeichert');
+        console.log('✓ Push-Subscription am Server gespeichert für:', currentEmployee);
         
-        // WICHTIG: Sofort Test-Benachrichtigung zeigen
-        // Dies registriert den Notification Channel in Android
-        if (Notification.permission === 'granted') {
+        // Test-Benachrichtigung NUR bei NEUER Subscription
+        if (isNewSubscription && Notification.permission === 'granted') {
             // Warte kurz damit Service Worker ready ist
             await new Promise(resolve => setTimeout(resolve, 500));
             
             // Zeige Test-Benachrichtigung VOM SERVICE WORKER
-            // Dies ist wichtig für Android Channel-Registrierung
             registration.showNotification('✅ Benachrichtigungen aktiviert', {
-                body: 'Sie erhalten ab jetzt Push-Benachrichtigungen für neue Aufgaben',
+                body: 'Sie erhalten ab jetzt Push-Benachrichtigungen',
                 icon: '/icon-192.png',
                 badge: '/icon-96.png',
                 vibrate: [200, 100, 200],
-                tag: 'test-notification',
+                tag: 'test-notification-' + Date.now(),
                 requireInteraction: false,
                 silent: false
             });
+            
+            console.log('✓ Test-Benachrichtigung gesendet');
         }
         
     } catch (error) {

@@ -243,7 +243,7 @@ app.post('/api/tasks', async (req, res) => {
     const query = `INSERT INTO tasks (title, priority, employee, status, overdue_hours) 
                    VALUES (?, ?, ?, 'open', ?)`;
     
-    db.run(query, [title, priority, employee, overdueHours || 48], function(err) {
+    db.run(query, [title, priority, employee, overdueHours || 48], async function(err) {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
@@ -251,14 +251,19 @@ app.post('/api/tasks', async (req, res) => {
 
         const taskId = this.lastID;
 
-        // Push-Benachrichtigung an Mitarbeiter senden
-        sendPushNotification(employee, {
-            title: '📋 Neue Aufgabe zugewiesen',
-            body: `Dir wurde die Aufgabe "${title}" zugewiesen`,
-            taskId: taskId
-        });
+        console.log(`[NEUE AUFGABE] Erstellt: "${title}" für ${employee} (ID: ${taskId})`);
 
-        console.log(`✓ Push-Benachrichtigung an ${employee} gesendet für Aufgabe: ${title}`);
+        // Push-Benachrichtigung an Mitarbeiter senden
+        try {
+            await sendPushNotification(employee, {
+                title: '📋 Neue Aufgabe zugewiesen',
+                body: `Dir wurde die Aufgabe "${title}" zugewiesen`,
+                taskId: taskId
+            });
+            console.log(`✓ Push-Benachrichtigung an ${employee} gesendet für Aufgabe: ${title}`);
+        } catch (error) {
+            console.error(`✗ Push-Fehler für ${employee}:`, error.message);
+        }
 
         res.json({ 
             id: taskId, 
@@ -446,6 +451,36 @@ app.get('/api/subscribe/:employee', (req, res) => {
 // VAPID Public Key abrufen
 app.get('/api/vapid-public-key', (req, res) => {
     res.json({ publicKey: vapidKeys.publicKey });
+});
+
+// DEBUG: Alle Subscriptions anzeigen
+app.get('/api/debug/subscriptions', (req, res) => {
+    db.all('SELECT employee, endpoint FROM subscriptions', [], (err, rows) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        res.json({ 
+            count: rows.length,
+            subscriptions: rows 
+        });
+    });
+});
+
+// DEBUG: Test-Push senden
+app.post('/api/debug/test-push/:employee', async (req, res) => {
+    const { employee } = req.params;
+    
+    try {
+        await sendPushNotification(employee, {
+            title: '🔔 TEST-Benachrichtigung',
+            body: `Dies ist eine Test-Push für ${employee}`,
+            taskId: 0
+        });
+        res.json({ success: true, message: `Test-Push an ${employee} gesendet` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Hilfsfunktion: Push-Benachrichtigung senden
