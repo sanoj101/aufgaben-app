@@ -471,73 +471,129 @@ app.get('/api/debug/subscriptions', (req, res) => {
 app.get('/api/debug/test-push/:employee', async (req, res) => {
     const { employee } = req.params;
     
+    console.log(`\n🔍 DEBUG: Test-Push für ${employee} wird gesendet...`);
+    
     try {
-        await sendPushNotification(employee, {
+        const result = await sendPushNotification(employee, {
             title: '🔔 TEST-Benachrichtigung',
             body: `Dies ist eine Test-Push für ${employee}`,
             taskId: 0
         });
-        res.json({ success: true, message: `Test-Push an ${employee} gesendet` });
+        
+        console.log(`✅ Test-Push Ergebnis:`, result);
+        
+        res.json({ 
+            success: true, 
+            message: `Test-Push an ${employee} gesendet`,
+            result: result
+        });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error(`❌ Test-Push Fehler:`, error);
+        res.status(500).json({ 
+            error: error.message,
+            stack: error.stack
+        });
     }
 });
 
 // Hilfsfunktion: Push-Benachrichtigung senden
-async function sendPushNotification(employee, data) {
-    db.get('SELECT * FROM subscriptions WHERE employee = ?', [employee], async (err, row) => {
-        if (err || !row) {
-            console.log(`Keine Push-Subscription für ${employee}`);
-            return;
-        }
-
-        const subscription = {
-            endpoint: row.endpoint,
-            keys: JSON.parse(row.keys)
-        };
-
-        const payload = JSON.stringify(data);
-
-        try {
-            await webpush.sendNotification(subscription, payload);
-            console.log(`✓ Push-Benachrichtigung an ${employee} gesendet`);
-        } catch (error) {
-            console.error(`Fehler beim Senden der Push-Benachrichtigung:`, error);
-            
-            // Ungültige Subscription entfernen
-            if (error.statusCode === 410) {
-                db.run('DELETE FROM subscriptions WHERE employee = ?', [employee]);
+function sendPushNotification(employee, data) {
+    console.log(`\n📤 sendPushNotification aufgerufen für: ${employee}`);
+    console.log(`   Daten:`, JSON.stringify(data));
+    
+    return new Promise((resolve, reject) => {
+        db.get('SELECT * FROM subscriptions WHERE employee = ?', [employee], async (err, row) => {
+            if (err) {
+                console.log(`❌ DB-Fehler bei Push für ${employee}:`, err);
+                return reject(err);
             }
-        }
+            
+            if (!row) {
+                console.log(`⚠️  Keine Push-Subscription für "${employee}" gefunden!`);
+                console.log(`   Verfügbare Subscriptions in DB prüfen...`);
+                
+                // Zeige alle verfügbaren Subscriptions
+                db.all('SELECT employee FROM subscriptions', [], (err2, rows) => {
+                    if (!err2 && rows) {
+                        console.log(`   Verfügbare: ${rows.map(r => `"${r.employee}"`).join(', ')}`);
+                    }
+                });
+                
+                return resolve({ sent: false, reason: 'no_subscription' });
+            }
+
+            console.log(`✓ Subscription gefunden für ${employee}`);
+            console.log(`   Endpoint: ${row.endpoint.substring(0, 50)}...`);
+
+            const subscription = {
+                endpoint: row.endpoint,
+                keys: JSON.parse(row.keys)
+            };
+
+            const payload = JSON.stringify(data);
+            console.log(`   Payload: ${payload}`);
+
+            try {
+                console.log(`   📡 Sende Push via webpush.sendNotification...`);
+                const result = await webpush.sendNotification(subscription, payload);
+                console.log(`✅ Push-Benachrichtigung an ${employee} ERFOLGREICH gesendet!`);
+                console.log(`   Webpush Result:`, result);
+                resolve({ sent: true, result });
+            } catch (error) {
+                console.error(`❌ Push-Fehler für ${employee}:`);
+                console.error(`   Error:`, error.message);
+                console.error(`   StatusCode:`, error.statusCode);
+                console.error(`   Body:`, error.body);
+                
+                // Ungültige Subscription entfernen
+                if (error.statusCode === 410) {
+                    db.run('DELETE FROM subscriptions WHERE employee = ?', [employee]);
+                    console.log(`🗑️  Ungültige Subscription für ${employee} gelöscht`);
+                }
+                
+                reject(error);
+            }
+        });
     });
 }
 
 // Hilfsfunktion: Push-Benachrichtigung an Tobias senden
-async function sendPushToChef(data) {
-    db.get('SELECT * FROM subscriptions WHERE employee = ?', ['Tobias'], async (err, row) => {
-        if (err || !row) {
-            console.log('Keine Push-Subscription für Tobias');
-            return;
-        }
-
-        const subscription = {
-            endpoint: row.endpoint,
-            keys: JSON.parse(row.keys)
-        };
-
-        const payload = JSON.stringify(data);
-
-        try {
-            await webpush.sendNotification(subscription, payload);
-            console.log('✓ Push-Benachrichtigung an Tobias gesendet');
-        } catch (error) {
-            console.error('Fehler beim Senden der Push-Benachrichtigung an Tobias:', error);
-            
-            // Ungültige Subscription entfernen
-            if (error.statusCode === 410) {
-                db.run('DELETE FROM subscriptions WHERE employee = ?', ['Tobias']);
+function sendPushToChef(data) {
+    return new Promise((resolve, reject) => {
+        db.get('SELECT * FROM subscriptions WHERE employee = ?', ['Tobias'], async (err, row) => {
+            if (err) {
+                console.log('❌ DB-Fehler bei Push für Tobias:', err);
+                return reject(err);
             }
-        }
+            
+            if (!row) {
+                console.log('⚠️ Keine Push-Subscription für Tobias');
+                return resolve({ sent: false, reason: 'no_subscription' });
+            }
+
+            const subscription = {
+                endpoint: row.endpoint,
+                keys: JSON.parse(row.keys)
+            };
+
+            const payload = JSON.stringify(data);
+
+            try {
+                await webpush.sendNotification(subscription, payload);
+                console.log('✅ Push-Benachrichtigung an Tobias gesendet');
+                resolve({ sent: true });
+            } catch (error) {
+                console.error('❌ Push-Fehler für Tobias:', error.message);
+                
+                // Ungültige Subscription entfernen
+                if (error.statusCode === 410) {
+                    db.run('DELETE FROM subscriptions WHERE employee = ?', ['Tobias']);
+                    console.log('🗑️ Ungültige Subscription für Tobias gelöscht');
+                }
+                
+                reject(error);
+            }
+        });
     });
 }
 
