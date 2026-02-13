@@ -161,27 +161,47 @@ self.addEventListener('push', event => {
 
 // Notification Click
 self.addEventListener('notificationclick', event => {
-    console.log('[SW] Notification clicked:', event.action);
+    console.log('[SW] Notification clicked, action:', event.action);
     event.notification.close();
     
     if (event.action === 'close') {
+        console.log('[SW] Close action - doing nothing');
         return;
     }
     
+    // URL der App (aus dem Notification Data oder default)
+    const urlToOpen = event.notification.data?.url || '/';
+    
     event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(clientList => {
-                // Wenn App bereits offen, fokussiere sie
-                for (let client of clientList) {
-                    if ('focus' in client) {
-                        return client.focus();
-                    }
+        self.clients.matchAll({ 
+            type: 'window',
+            includeUncontrolled: true 
+        })
+        .then(clientList => {
+            console.log('[SW] Found clients:', clientList.length);
+            
+            // Prüfe ob App bereits offen ist
+            for (let client of clientList) {
+                const clientUrl = new URL(client.url);
+                const targetUrl = new URL(urlToOpen, self.location.origin);
+                
+                // Wenn gleiche Origin, fokussiere das Fenster
+                if (clientUrl.origin === targetUrl.origin) {
+                    console.log('[SW] Focusing existing client:', client.url);
+                    return client.focus();
                 }
-                // Sonst öffne neues Fenster
-                if (self.clients.openWindow) {
-                    return self.clients.openWindow('/');
-                }
-            })
+            }
+            
+            // Sonst öffne neues Fenster mit absoluter URL
+            if (self.clients.openWindow) {
+                const absoluteUrl = new URL(urlToOpen, self.location.origin).href;
+                console.log('[SW] Opening new window:', absoluteUrl);
+                return self.clients.openWindow(absoluteUrl);
+            }
+        })
+        .catch(err => {
+            console.error('[SW] Error opening window:', err);
+        })
     );
 });
 
