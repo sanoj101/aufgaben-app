@@ -1,6 +1,6 @@
 // Service Worker für Push-Benachrichtigungen und PWA-Funktionalität
 
-const CACHE_NAME = 'aufgaben-app-v1';
+const CACHE_NAME = 'aufgaben-app-v4';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -10,6 +10,9 @@ const urlsToCache = [
 
 // Installation
 self.addEventListener('install', event => {
+    // Übernehme sofort die Kontrolle
+    self.skipWaiting();
+    
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
@@ -31,43 +34,47 @@ self.addEventListener('activate', event => {
                     }
                 })
             );
+        }).then(() => {
+            // Übernehme sofort Kontrolle über alle Clients
+            return self.clients.claim();
         })
     );
 });
 
-// Fetch (Offline-Unterstützung)
+// Fetch (Network-First für API-Calls)
 self.addEventListener('fetch', event => {
+    const url = new URL(event.request.url);
+    
+    // API-Calls: Immer vom Netzwerk, NIE cachen
+    if (url.pathname.startsWith('/api/')) {
+        event.respondWith(
+            fetch(event.request).catch(() => {
+                return new Response(JSON.stringify({ error: 'Offline' }), {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            })
+        );
+        return;
+    }
+    
+    // Für statische Assets: Network-First (nicht Cache-First!)
     event.respondWith(
-        caches.match(event.request)
+        fetch(event.request)
             .then(response => {
-                // Cache-Treffer - gebe gespeicherte Antwort zurück
-                if (response) {
-                    return response;
+                // Wenn erfolgreich, cache es
+                if (response && response.status === 200) {
+                    const responseToCache = response.clone();
+                    caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, responseToCache);
+                    });
                 }
-                
-                // Keine Cache-Treffer - hole vom Netzwerk
-                return fetch(event.request).then(
-                    response => {
-                        // Prüfe ob wir eine gültige Antwort erhalten haben
-                        if (!response || response.status !== 200 || response.type !== 'basic') {
-                            return response;
-                        }
-
-                        // Clone die Antwort
-                        const responseToCache = response.clone();
-
-                        caches.open(CACHE_NAME)
-                            .then(cache => {
-                                cache.put(event.request, responseToCache);
-                            });
-
-                        return response;
-                    }
-                );
+                return response;
             })
             .catch(() => {
-                // Offline - zeige Fallback-Seite
-                return caches.match('/index.html');
+                // Nur wenn offline, nutze Cache
+                return caches.match(event.request).then(response => {
+                    return response || new Response('Offline');
+                });
             })
     );
 });

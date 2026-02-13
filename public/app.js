@@ -35,8 +35,24 @@ async function init() {
     // Service Worker registrieren
     if ('serviceWorker' in navigator) {
         try {
-            await navigator.serviceWorker.register('/sw.js');
+            const registration = await navigator.serviceWorker.register('/sw.js');
             console.log('✓ Service Worker registriert');
+            
+            // Prüfe auf Updates alle 60 Sekunden
+            setInterval(() => {
+                registration.update();
+            }, 60000);
+            
+            // Wenn neuer Service Worker verfügbar, lade Seite neu
+            registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                        console.log('Neuer Service Worker aktiviert - Seite wird neu geladen');
+                        window.location.reload();
+                    }
+                });
+            });
         } catch (error) {
             console.error('Service Worker Fehler:', error);
         }
@@ -386,7 +402,8 @@ async function createTask(event) {
 // Aufgaben laden
 async function loadTasks() {
     try {
-        const response = await fetch(`${API_URL}/api/tasks`);
+        // Cache-Busting: Timestamp anhängen
+        const response = await fetch(`${API_URL}/api/tasks?_=${Date.now()}`);
         allTasks = await response.json();
         
         if (userRole === 'chef') {
