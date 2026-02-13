@@ -24,8 +24,8 @@ async function init() {
         const login = JSON.parse(savedLogin);
         isLoggedIn = true;
         userRole = login.role;
-        userName = login.name || 'Chef';
-        currentEmployee = login.name || 'Chef';
+        userName = login.name || 'Tobias';
+        currentEmployee = login.name || 'Tobias';
         showMainApp();
         await loadTasks();
     } else {
@@ -155,9 +155,9 @@ function showLoginButtons() {
     
     loginButtons.innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
-            <button class="login-user-btn chef-btn" onclick="showPasswordPrompt('Chef', 'chef')">
-                <div class="login-user-icon">👔</div>
-                <div class="login-user-name">Chef</div>
+            <button class="login-user-btn chef-btn" onclick="showPasswordPrompt('Tobias', 'chef')">
+                <div class="login-user-icon">👷</div>
+                <div class="login-user-name">Tobias</div>
             </button>
             ${allEmployees.map(emp => `
                 <button class="login-user-btn" onclick="showPasswordPrompt('${escapeHtml(emp.name)}', 'mitarbeiter')">
@@ -210,11 +210,11 @@ async function login(event, name, role) {
         if (data.success) {
             isLoggedIn = true;
             userRole = role;
-            userName = name;
-            currentEmployee = name;
-            localStorage.setItem('login', JSON.stringify({ role, name }));
+            userName = role === 'chef' ? 'Tobias' : name;
+            currentEmployee = role === 'chef' ? 'Tobias' : name;
+            localStorage.setItem('login', JSON.stringify({ role, name: userName }));
             showMainApp();
-            showNotification(`Willkommen, ${name}! 👋`);
+            showNotification(`Willkommen, ${userName}! 👋`);
         } else {
             showNotification('Falsches Passwort!', 'error');
             document.getElementById('loginPassword').value = '';
@@ -300,7 +300,7 @@ function loadEmployeesForSelect() {
     const filterSelect = document.getElementById('filterEmployee');
     
     if (assignSelect) {
-        assignSelect.innerHTML = '<option value="">-- Mitarbeiter wählen --</option><option value="Chef">Chef (selbst)</option>';
+        assignSelect.innerHTML = '<option value="">-- Mitarbeiter wählen --</option><option value="Tobias">Tobias (selbst)</option>';
         allEmployees.forEach(emp => {
             const option = document.createElement('option');
             option.value = emp.name;
@@ -310,7 +310,7 @@ function loadEmployeesForSelect() {
     }
     
     if (filterSelect) {
-        filterSelect.innerHTML = '<option value="all">Alle Mitarbeiter</option><option value="Chef">Chef</option>';
+        filterSelect.innerHTML = '<option value="all">Alle Mitarbeiter</option><option value="Tobias">Tobias</option>';
         allEmployees.forEach(emp => {
             const option = document.createElement('option');
             option.value = emp.name;
@@ -614,12 +614,12 @@ function displayTasksForEmployee(tasks) {
                 ` : ''}
                 <div class="task-actions">
                     ${task.status === 'open' ? `
-                        <button class="action-btn complete-btn" onclick="completeTask(${task.id})">✓ Erledigt</button>
-                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()">📷 Foto ${task.photo ? 'ändern' : 'hinzufügen'}</button>
-                        <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
+                        <button class="action-btn complete-btn" onclick="completeTask(${task.id})" style="width: 100%; padding: 20px; font-size: 20px; font-weight: bold; margin-bottom: 15px;">✓ AUFGABE ERLEDIGT</button>
+                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()" style="width: 100%; padding: 15px; font-size: 18px;">📷 Foto ${task.photo ? 'ändern' : 'aufnehmen'}</button>
+                        <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" capture="environment" onchange="addPhoto(${task.id}, event)">
                     ` : ''}
                     ${task.status === 'completed' ? `
-                        <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
+                        <button class="action-btn" style="background: #f39c12; color: white; width: 100%; padding: 15px;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
                     ` : ''}
                 </div>
             </div>

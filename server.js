@@ -87,12 +87,12 @@ function initDatabase() {
 
 // API Endpoints
 
-// Chef Login
+// Tobias Login
 app.post('/api/login/chef', (req, res) => {
     const { password } = req.body;
     
     if (password === 'Bauer') {
-        res.json({ success: true, role: 'chef' });
+        res.json({ success: true, role: 'chef', name: 'Tobias' });
     } else {
         res.status(401).json({ success: false, error: 'Falsches Passwort' });
     }
@@ -253,11 +253,12 @@ app.post('/api/tasks', async (req, res) => {
 
         // Push-Benachrichtigung an Mitarbeiter senden
         sendPushNotification(employee, {
-            title: '📋 Neue Aufgabe',
-            body: title,
-            priority: priority,
+            title: '📋 Neue Aufgabe zugewiesen',
+            body: `Dir wurde die Aufgabe "${title}" zugewiesen`,
             taskId: taskId
         });
+
+        console.log(`✓ Push-Benachrichtigung an ${employee} gesendet für Aufgabe: ${title}`);
 
         res.json({ 
             id: taskId, 
@@ -320,28 +321,31 @@ app.put('/api/tasks/:id', (req, res) => {
                 return;
             }
 
-            // Push-Benachrichtigung an Chef senden bei Statusänderung oder Foto
+            // Push-Benachrichtigung an Tobias senden bei Statusänderung oder Foto
             if (status === 'completed') {
-                // Benachrichtige Chef dass Aufgabe erledigt wurde
+                // Benachrichtige Tobias dass Aufgabe erledigt wurde
                 sendPushToChef({
                     title: '✅ Aufgabe erledigt',
-                    body: `${task.employee}: ${task.title}`,
+                    body: `${task.employee} hat "${task.title}" erledigt`,
                     taskId: id
                 });
+                console.log(`✓ Push an Tobias: ${task.employee} hat "${task.title}" erledigt`);
             } else if (photo) {
-                // Benachrichtige Chef dass Foto hinzugefügt wurde
+                // Benachrichtige Tobias dass Foto hinzugefügt wurde
                 sendPushToChef({
                     title: '📷 Foto hinzugefügt',
-                    body: `${task.employee}: ${task.title}`,
+                    body: `${task.employee} hat ein Foto zu "${task.title}" hinzugefügt`,
                     taskId: id
                 });
+                console.log(`✓ Push an Tobias: Foto hinzugefügt zu "${task.title}"`);
             } else if (status === 'open') {
-                // Benachrichtige Chef dass Aufgabe wieder geöffnet wurde
+                // Benachrichtige Tobias dass Aufgabe wieder geöffnet wurde
                 sendPushToChef({
                     title: '🔄 Aufgabe wieder geöffnet',
-                    body: `${task.employee}: ${task.title}`,
+                    body: `${task.employee} hat "${task.title}" wieder geöffnet`,
                     taskId: id
                 });
+                console.log(`✓ Push an Tobias: Aufgabe "${task.title}" wieder geöffnet`);
             }
         });
 
@@ -473,11 +477,11 @@ async function sendPushNotification(employee, data) {
     });
 }
 
-// Hilfsfunktion: Push-Benachrichtigung an Chef senden
+// Hilfsfunktion: Push-Benachrichtigung an Tobias senden
 async function sendPushToChef(data) {
-    db.get('SELECT * FROM subscriptions WHERE employee = ?', ['Chef'], async (err, row) => {
+    db.get('SELECT * FROM subscriptions WHERE employee = ?', ['Tobias'], async (err, row) => {
         if (err || !row) {
-            console.log('Keine Push-Subscription für Chef');
+            console.log('Keine Push-Subscription für Tobias');
             return;
         }
 
@@ -490,13 +494,13 @@ async function sendPushToChef(data) {
 
         try {
             await webpush.sendNotification(subscription, payload);
-            console.log('✓ Push-Benachrichtigung an Chef gesendet');
+            console.log('✓ Push-Benachrichtigung an Tobias gesendet');
         } catch (error) {
-            console.error('Fehler beim Senden der Push-Benachrichtigung an Chef:', error);
+            console.error('Fehler beim Senden der Push-Benachrichtigung an Tobias:', error);
             
             // Ungültige Subscription entfernen
             if (error.statusCode === 410) {
-                db.run('DELETE FROM subscriptions WHERE employee = ?', ['Chef']);
+                db.run('DELETE FROM subscriptions WHERE employee = ?', ['Tobias']);
             }
         }
     });

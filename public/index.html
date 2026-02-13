@@ -6,7 +6,14 @@
     <meta name="theme-color" content="#3498db">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Aufgaben">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Aufgabenverwaltung">
+    <meta name="msapplication-TileColor" content="#3498db">
+    <meta name="msapplication-tap-highlight" content="no">
     <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="apple-touch-icon" href="/icon-192.png">
     <title>Aufgabenverwaltung</title>
     <style>
         * {
@@ -688,12 +695,6 @@
                     Meine Aufgaben
                     <span class="task-count" id="myTaskCount">0 Aufgaben</span>
                 </h2>
-                
-                <div class="filter-buttons">
-                    <button class="filter-btn active" onclick="filterTasks('all')">Alle</button>
-                    <button class="filter-btn" onclick="filterTasks('open')">Offen</button>
-                    <button class="filter-btn" onclick="filterTasks('completed')">Erledigt</button>
-                </div>
 
                 <div class="task-list" id="myTaskList"></div>
             </div>
