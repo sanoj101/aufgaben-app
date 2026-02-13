@@ -522,7 +522,17 @@ function displayTasksForChef(tasks) {
     }
     
     // Filter nach Status
-    const filteredTasks = filterTasksArray(filteredByEmployee);
+    let filteredTasks = filterTasksArray(filteredByEmployee);
+    
+    // SORTIERUNG: Offene Aufgaben immer oben, dann nach Datum
+    filteredTasks.sort((a, b) => {
+        // Erst nach Status (open vor completed)
+        if (a.status === 'open' && b.status === 'completed') return -1;
+        if (a.status === 'completed' && b.status === 'open') return 1;
+        // Dann nach Datum (neueste zuerst)
+        return new Date(b.created_at) - new Date(a.created_at);
+    });
+    
     const taskList = document.getElementById('taskList');
     
     document.getElementById('taskCount').textContent = `${filteredTasks.length} Aufgaben`;
@@ -562,8 +572,9 @@ function displayTasksForChef(tasks) {
                 ` : ''}
                 <div class="task-actions">
                     ${task.status === 'open' ? `
+                        <button class="action-btn" style="background: #f39c12; color: white;" onclick="remindTask(${task.id}, '${escapeHtml(task.employee).replace(/'/g, "\\'")}', '${escapeHtml(task.title).replace(/'/g, "\\'")}')">🔔 Erinnern</button>
                         <button class="action-btn photo-btn" onclick="document.getElementById('photo-chef-${task.id}').click()">📷 Foto ${task.photo ? 'ändern' : 'hinzufügen'}</button>
-                        <input type="file" id="photo-chef-${task.id}" class="photo-input" accept="image/*" onchange="addPhoto(${task.id}, event)">
+                        <input type="file" id="photo-chef-${task.id}" class="photo-input" accept="image/*" capture="environment" onchange="addPhoto(${task.id}, event)">
                     ` : ''}
                     ${task.status === 'completed' ? `
                         <button class="action-btn" style="background: #f39c12; color: white;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
@@ -577,7 +588,17 @@ function displayTasksForChef(tasks) {
 
 // Aufgaben für Mitarbeiter anzeigen
 function displayTasksForEmployee(tasks) {
-    const filteredTasks = filterTasksArray(tasks);
+    let filteredTasks = filterTasksArray(tasks);
+    
+    // SORTIERUNG: Offene Aufgaben immer oben, dann nach Datum
+    filteredTasks.sort((a, b) => {
+        // Erst nach Status (open vor completed)
+        if (a.status === 'open' && b.status === 'completed') return -1;
+        if (a.status === 'completed' && b.status === 'open') return 1;
+        // Dann nach Datum (neueste zuerst)
+        return new Date(b.created_at) - new Date(a.created_at);
+    });
+    
     const taskList = document.getElementById('myTaskList');
     
     document.getElementById('myTaskCount').textContent = `${filteredTasks.length} Aufgaben`;
@@ -643,9 +664,45 @@ function viewFullImage(src) {
     document.body.appendChild(overlay);
 }
 
+// An Aufgabe erinnern (nur für Tobias)
+async function remindTask(taskId, employee, taskTitle) {
+    try {
+        showNotification(`Erinnerung wird an ${employee} gesendet...`);
+        
+        const response = await fetch(`${API_URL}/api/tasks/${taskId}/remind`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) throw new Error('Fehler beim Senden');
+
+        showNotification(`✓ ${employee} wurde an "${taskTitle}" erinnert`);
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification('Fehler beim Senden der Erinnerung', 'error');
+    }
+}
+
 // Aufgabe abschließen
 async function completeTask(taskId) {
     try {
+        // UI sofort aktualisieren (optimistisch)
+        const task = allTasks.find(t => t.id === taskId);
+        if (task) {
+            task.status = 'completed';
+            task.completed_at = new Date().toISOString();
+            // UI sofort neu rendern
+            if (userRole === 'chef') {
+                displayTasksForChef(allTasks);
+            } else {
+                const myTasks = allTasks.filter(t => t.employee === currentEmployee);
+                displayTasksForEmployee(myTasks);
+            }
+        }
+        
+        showNotification('Aufgabe als erledigt markiert! ✓');
+        
+        // Im Hintergrund an Server senden
         const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -654,11 +711,13 @@ async function completeTask(taskId) {
 
         if (!response.ok) throw new Error('Fehler beim Aktualisieren');
 
+        // Daten vom Server neu laden (zur Sicherheit)
         await loadTasks();
-        showNotification('Aufgabe als erledigt markiert! ✓');
     } catch (error) {
         console.error('Fehler:', error);
         showNotification('Fehler beim Aktualisieren', 'error');
+        // Bei Fehler: Daten neu laden um korrekten Status zu haben
+        await loadTasks();
     }
 }
 
@@ -722,6 +781,22 @@ async function addPhoto(taskId, event) {
     const reader = new FileReader();
     reader.onload = async function(e) {
         try {
+            showNotification('Foto wird hochgeladen... 📷');
+            
+            // UI sofort aktualisieren (optimistisch)
+            const task = allTasks.find(t => t.id === taskId);
+            if (task) {
+                task.photo = e.target.result;
+                // UI sofort neu rendern
+                if (userRole === 'chef') {
+                    displayTasksForChef(allTasks);
+                } else {
+                    const myTasks = allTasks.filter(t => t.employee === currentEmployee);
+                    displayTasksForEmployee(myTasks);
+                }
+            }
+            
+            // Im Hintergrund an Server senden
             const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -730,11 +805,15 @@ async function addPhoto(taskId, event) {
 
             if (!response.ok) throw new Error('Fehler beim Hochladen');
 
+            showNotification('Foto erfolgreich hochgeladen! ✓');
+            
+            // Daten vom Server neu laden (zur Sicherheit)
             await loadTasks();
-            showNotification('Foto hinzugefügt! 📷');
         } catch (error) {
             console.error('Fehler:', error);
             showNotification('Fehler beim Hochladen', 'error');
+            // Bei Fehler: Daten neu laden
+            await loadTasks();
         }
     };
     reader.readAsDataURL(file);

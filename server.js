@@ -358,6 +358,39 @@ app.put('/api/tasks/:id', (req, res) => {
     });
 });
 
+// An Aufgabe erinnern
+app.post('/api/tasks/:id/remind', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Hole Aufgaben-Details
+        db.get('SELECT * FROM tasks WHERE id = ?', [id], async (err, task) => {
+            if (err || !task) {
+                res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+                return;
+            }
+            
+            // Sende Erinnerungs-Push an Mitarbeiter
+            try {
+                await sendPushNotification(task.employee, {
+                    title: '🔔 Erinnerung: Aufgabe offen',
+                    body: `Bitte erledige: "${task.title}"`,
+                    taskId: id
+                });
+                
+                console.log(`✓ Erinnerung an ${task.employee} gesendet für Aufgabe: ${task.title}`);
+                res.json({ success: true, message: 'Erinnerung gesendet' });
+            } catch (error) {
+                console.error(`✗ Fehler beim Senden der Erinnerung:`, error);
+                res.status(500).json({ error: 'Fehler beim Senden der Erinnerung' });
+            }
+        });
+    } catch (error) {
+        console.error('Fehler:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Aufgabe löschen
 app.delete('/api/tasks/:id', (req, res) => {
     const { id } = req.params;
