@@ -113,21 +113,8 @@ self.addEventListener('push', event => {
             taskId: data.taskId,
             url: '/',
             timestamp: Date.now()
-        },
-        // Android Notification Channel
-        channelId: 'aufgaben-notifications',
-        importance: 4, // High importance
-        actions: [
-            {
-                action: 'open',
-                title: 'Öffnen',
-                icon: '/icon-96.png'
-            },
-            {
-                action: 'close',
-                title: 'Schließen'
-            }
-        ]
+        }
+        // Action-Buttons entfernt - Klick auf Benachrichtigung öffnet App
     };
 
     event.waitUntil(
@@ -159,17 +146,12 @@ self.addEventListener('push', event => {
     );
 });
 
-// Notification Click
+// Notification Click - öffnet App direkt
 self.addEventListener('notificationclick', event => {
-    console.log('[SW] Notification clicked, action:', event.action);
+    console.log('[SW] Notification clicked');
     event.notification.close();
     
-    if (event.action === 'close') {
-        console.log('[SW] Close action - doing nothing');
-        return;
-    }
-    
-    // URL der App (aus dem Notification Data oder default)
+    // URL der App
     const urlToOpen = event.notification.data?.url || '/';
     
     event.waitUntil(
@@ -187,12 +169,12 @@ self.addEventListener('notificationclick', event => {
                 
                 // Wenn gleiche Origin, fokussiere das Fenster
                 if (clientUrl.origin === targetUrl.origin) {
-                    console.log('[SW] Focusing existing client:', client.url);
+                    console.log('[SW] Focusing existing client');
                     return client.focus();
                 }
             }
             
-            // Sonst öffne neues Fenster mit absoluter URL
+            // Sonst öffne neues Fenster
             if (self.clients.openWindow) {
                 const absoluteUrl = new URL(urlToOpen, self.location.origin).href;
                 console.log('[SW] Opening new window:', absoluteUrl);
@@ -200,7 +182,7 @@ self.addEventListener('notificationclick', event => {
             }
         })
         .catch(err => {
-            console.error('[SW] Error opening window:', err);
+            console.error('[SW] Error handling notification click:', err);
         })
     );
 });
