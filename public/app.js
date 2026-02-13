@@ -391,12 +391,22 @@ async function subscribeToPush() {
 
         console.log('✓ Push-Subscription am Server gespeichert');
         
-        // Teste Push-Benachrichtigung
+        // WICHTIG: Sofort Test-Benachrichtigung zeigen
+        // Dies registriert den Notification Channel in Android
         if (Notification.permission === 'granted') {
-            new Notification('✅ Benachrichtigungen aktiviert', {
-                body: 'Sie erhalten ab jetzt Push-Benachrichtigungen',
+            // Warte kurz damit Service Worker ready ist
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Zeige Test-Benachrichtigung VOM SERVICE WORKER
+            // Dies ist wichtig für Android Channel-Registrierung
+            registration.showNotification('✅ Benachrichtigungen aktiviert', {
+                body: 'Sie erhalten ab jetzt Push-Benachrichtigungen für neue Aufgaben',
                 icon: '/icon-192.png',
-                badge: '/icon-96.png'
+                badge: '/icon-96.png',
+                vibrate: [200, 100, 200],
+                tag: 'test-notification',
+                requireInteraction: false,
+                silent: false
             });
         }
         

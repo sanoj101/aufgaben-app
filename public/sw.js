@@ -105,7 +105,7 @@ self.addEventListener('push', event => {
         badge: '/icon-96.png',
         vibrate: [200, 100, 200, 100, 200],
         tag: 'aufgabe-' + (data.taskId || Date.now()),
-        requireInteraction: true, // Bleibt bis User klickt (wichtig!)
+        requireInteraction: true,
         renotify: true,
         silent: false,
         timestamp: Date.now(),
@@ -114,10 +114,14 @@ self.addEventListener('push', event => {
             url: '/',
             timestamp: Date.now()
         },
+        // Android Notification Channel
+        channelId: 'aufgaben-notifications',
+        importance: 4, // High importance
         actions: [
             {
                 action: 'open',
-                title: 'Öffnen'
+                title: 'Öffnen',
+                icon: '/icon-96.png'
             },
             {
                 action: 'close',
@@ -145,6 +149,12 @@ self.addEventListener('push', event => {
             })
             .catch(err => {
                 console.error('[SW] ✗ Notification failed:', err);
+                
+                // Fallback: Versuche es mit minimaler Config
+                return self.registration.showNotification(title, {
+                    body: data.body || 'Neue Aufgabe',
+                    icon: '/icon-192.png'
+                });
             })
     );
 });
