@@ -554,7 +554,7 @@ function displayTasksForChef(tasks) {
         return `
             <div class="task-card ${task.priority} ${task.status === 'completed' ? 'completed' : ''} ${isOverdue ? 'overdue' : ''}">
                 <div class="task-header">
-                    <div class="task-title">${escapeHtml(task.title)}</div>
+                    <div class="task-title"${task.status === 'completed' ? ' style="text-decoration: line-through; opacity: 0.6;"' : ''}>${escapeHtml(task.title)}</div>
                     <div class="task-badges">
                         <span class="badge ${task.priority}">${task.priority === 'important' ? 'Wichtig' : 'Unwichtig'}</span>
                         ${task.status === 'completed' ? '<span class="badge completed">Erledigt</span>' : ''}
@@ -620,7 +620,7 @@ function displayTasksForEmployee(tasks) {
         return `
             <div class="task-card ${task.priority} ${task.status === 'completed' ? 'completed' : ''} ${isOverdue ? 'overdue' : ''}">
                 <div class="task-header">
-                    <div class="task-title">${escapeHtml(task.title)}</div>
+                    <div class="task-title"${task.status === 'completed' ? ' style="text-decoration: line-through; opacity: 0.6;"' : ''}>${escapeHtml(task.title)}</div>
                     <div class="task-badges">
                         <span class="badge ${task.priority}">${task.priority === 'important' ? 'Wichtig' : 'Unwichtig'}</span>
                         ${task.status === 'completed' ? '<span class="badge completed">Erledigt</span>' : ''}
@@ -904,6 +904,9 @@ async function loadEmployeeManagement() {
         <div class="employee-card">
             <div class="employee-name">👷 ${escapeHtml(emp.name)}</div>
             <div class="employee-actions">
+                <button class="employee-btn edit" onclick="editEmployeeName(${emp.id}, '${escapeHtml(emp.name).replace(/'/g, "\\'")}')">
+                    ✏️ Namen ändern
+                </button>
                 <button class="employee-btn password" onclick="changeEmployeePassword(${emp.id}, '${escapeHtml(emp.name).replace(/'/g, "\\'")}')">
                     🔑 Passwort ändern
                 </button>
@@ -950,6 +953,124 @@ async function addEmployee(event) {
     } catch (error) {
         console.error('Fehler:', error);
         showNotification(error.message || 'Fehler beim Anlegen', 'error');
+    }
+}
+
+// Mitarbeiter-Namen ändern
+async function editEmployeeName(id, currentName) {
+    const newName = prompt(`Neuen Namen eingeben für "${currentName}":`, currentName);
+    
+    if (!newName || newName.trim() === '') {
+        return;
+    }
+    
+    if (newName.trim() === currentName) {
+        showNotification('Name wurde nicht geändert');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/employees/${id}/name`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName.trim() })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error);
+        }
+        
+        // Lade alles neu
+        await loadEmployees();
+        await loadEmployeeManagement();
+        await loadEmployeesForSelect();
+        showLoginButtons(); // Login-Buttons aktualisieren
+        await loadTasks(); // Aufgaben neu laden (Namen aktualisieren)
+        
+        showNotification(`Name von "${currentName}" zu "${newName.trim()}" geändert! ✓`);
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification(error.message || 'Fehler beim Ändern des Namens', 'error');
+    }
+}
+
+// Tobias Namen ändern
+async function editTobiasName() {
+    const newName = prompt('Neuen Namen eingeben:', 'Tobias');
+    
+    if (!newName || newName.trim() === '') {
+        return;
+    }
+    
+    if (newName.trim() === 'Tobias') {
+        showNotification('Name wurde nicht geändert');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/chef/name`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName.trim() })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error);
+        }
+        
+        // Update lokale Variablen
+        userName = newName.trim();
+        currentEmployee = newName.trim();
+        localStorage.setItem('login', JSON.stringify({ role: 'chef', name: newName.trim() }));
+        
+        showLoginButtons(); // Login-Buttons aktualisieren
+        await loadTasks(); // Aufgaben neu laden
+        
+        showNotification(`Name zu "${newName.trim()}" geändert! ✓`);
+        
+        // UI aktualisieren
+        const usernameDisplay = document.getElementById('usernameDisplay');
+        if (usernameDisplay) {
+            usernameDisplay.textContent = newName.trim();
+        }
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification(error.message || 'Fehler beim Ändern des Namens', 'error');
+    }
+}
+
+// Tobias Passwort ändern
+async function changeTobiasPassword() {
+    const oldPassword = prompt('Aktuelles Passwort eingeben:');
+    if (!oldPassword) return;
+    
+    const newPassword = prompt('Neues Passwort eingeben:');
+    if (!newPassword || newPassword.trim() === '') {
+        showNotification('Passwort darf nicht leer sein', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/chef/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                oldPassword: oldPassword,
+                newPassword: newPassword.trim() 
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error);
+        }
+        
+        showNotification('Passwort erfolgreich geändert! ✓');
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification(error.message || 'Fehler beim Ändern des Passworts', 'error');
     }
 }
 

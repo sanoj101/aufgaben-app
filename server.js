@@ -72,6 +72,19 @@ function initDatabase() {
         else console.log('✓ Employees-Tabelle bereit');
     });
 
+    db.run(`CREATE TABLE IF NOT EXISTS admin_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        name TEXT NOT NULL DEFAULT 'Tobias',
+        password TEXT NOT NULL DEFAULT 'Bauer'
+    )`, (err) => {
+        if (err) console.error('Fehler beim Erstellen der Admin-Config-Tabelle:', err);
+        else {
+            console.log('✓ Admin-Config-Tabelle bereit');
+            // Initialisiere Admin falls nicht vorhanden
+            db.run(`INSERT OR IGNORE INTO admin_config (id, name, password) VALUES (1, 'Tobias', 'Bauer')`);
+        }
+    });
+
     // Standard-Mitarbeiter mit Passwörtern einfügen
     const defaultEmployees = [
         { name: 'Max Müller', password: 'max123' },
@@ -91,11 +104,100 @@ function initDatabase() {
 app.post('/api/login/chef', (req, res) => {
     const { password } = req.body;
     
-    if (password === 'Bauer') {
-        res.json({ success: true, role: 'chef', name: 'Tobias' });
-    } else {
-        res.status(401).json({ success: false, error: 'Falsches Passwort' });
+    db.get('SELECT * FROM admin_config WHERE id = 1', [], (err, admin) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        
+        if (!admin) {
+            res.status(500).json({ error: 'Admin-Konfiguration nicht gefunden' });
+            return;
+        }
+        
+        if (password === admin.password) {
+            res.json({ success: true, role: 'chef', name: admin.name });
+        } else {
+            res.status(401).json({ success: false, error: 'Falsches Passwort' });
+        }
+    });
+});
+
+// Chef/Tobias Namen ändern
+app.put('/api/chef/name', (req, res) => {
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+        res.status(400).json({ error: 'Name erforderlich' });
+        return;
     }
+
+    const oldName = 'Tobias'; // Wird aus DB geholt
+    
+    db.get('SELECT name FROM admin_config WHERE id = 1', [], (err, admin) => {
+        if (err || !admin) {
+            res.status(500).json({ error: 'Admin nicht gefunden' });
+            return;
+        }
+        
+        const currentName = admin.name;
+        
+        db.run('UPDATE admin_config SET name = ? WHERE id = 1', [name.trim()], function(err) {
+            if (err) {
+                res.status(500).json({ error: err.message });
+                return;
+            }
+
+            // Update auch die Subscriptions
+            db.run('UPDATE subscriptions SET employee = ? WHERE employee = ?', 
+                [name.trim(), currentName], 
+                (err) => {
+                    if (err) console.error('Fehler beim Update der Subscriptions:', err);
+                }
+            );
+            
+            // Update auch die Aufgaben
+            db.run('UPDATE tasks SET employee = ? WHERE employee = ?',
+                [name.trim(), currentName],
+                (err) => {
+                    if (err) console.error('Fehler beim Update der Aufgaben:', err);
+                }
+            );
+
+            res.json({ success: true, updated: this.changes });
+        });
+    });
+});
+
+// Chef/Tobias Passwort ändern
+app.put('/api/chef/password', (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword || !newPassword.trim()) {
+        res.status(400).json({ error: 'Altes und neues Passwort erforderlich' });
+        return;
+    }
+
+    db.get('SELECT password FROM admin_config WHERE id = 1', [], (err, admin) => {
+        if (err || !admin) {
+            res.status(500).json({ error: 'Admin nicht gefunden' });
+            return;
+        }
+        
+        if (oldPassword !== admin.password) {
+            res.status(401).json({ error: 'Aktuelles Passwort ist falsch' });
+            return;
+        }
+        
+        db.run('UPDATE admin_config SET password = ? WHERE id = 1', [newPassword.trim()], function(err) {
+            if (err) {
+                res.status(500).json({ error: err.message });
+                return;
+            }
+
+            res.json({ success: true, updated: this.changes });
+        });
+    });
 });
 
 // Mitarbeiter Login
@@ -151,6 +253,43 @@ app.post('/api/employees', (req, res) => {
             return;
         }
         res.json({ id: this.lastID, name: name.trim() });
+    });
+});
+
+// Mitarbeiter-Namen ändern
+app.put('/api/employees/:id/name', (req, res) => {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+        res.status(400).json({ error: 'Name erforderlich' });
+        return;
+    }
+
+    db.run('UPDATE employees SET name = ? WHERE id = ?', [name.trim(), id], function(err) {
+        if (err) {
+            if (err.message.includes('UNIQUE')) {
+                res.status(400).json({ error: 'Name bereits vergeben' });
+            } else {
+                res.status(500).json({ error: err.message });
+            }
+            return;
+        }
+
+        if (this.changes === 0) {
+            res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+            return;
+        }
+
+        // Update auch die Subscriptions
+        db.run('UPDATE subscriptions SET employee = ? WHERE employee = (SELECT name FROM employees WHERE id = ?)', 
+            [name.trim(), id], 
+            (err) => {
+                if (err) console.error('Fehler beim Update der Subscriptions:', err);
+            }
+        );
+
+        res.json({ success: true, updated: this.changes });
     });
 });
 
