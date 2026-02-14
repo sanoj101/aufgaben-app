@@ -200,6 +200,17 @@ app.put('/api/chef/password', (req, res) => {
     });
 });
 
+// Chef-Namen abrufen
+app.get('/api/chef/name', (req, res) => {
+    db.get('SELECT name FROM admin_config WHERE id = 1', [], (err, admin) => {
+        if (err || !admin) {
+            res.json({ name: 'Tobias' }); // Fallback
+            return;
+        }
+        res.json({ name: admin.name });
+    });
+});
+
 // Mitarbeiter Login
 app.post('/api/login/mitarbeiter', (req, res) => {
     const { name, password } = req.body;

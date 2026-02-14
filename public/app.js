@@ -12,9 +12,11 @@ let currentEmployeeFilter = 'all';
 let allTasks = [];
 let allEmployees = [];
 let vapidPublicKey = '';
+let chefName = 'Tobias'; // Default, wird aus DB geladen
 
 // Initialisierung
 async function init() {
+    await loadChefName(); // Lade Chef-Namen aus DB
     await loadEmployees();
     await loadVapidKey();
     
@@ -24,8 +26,9 @@ async function init() {
         const login = JSON.parse(savedLogin);
         isLoggedIn = true;
         userRole = login.role;
-        userName = login.name || 'Tobias';
-        currentEmployee = login.name || 'Tobias';
+        // Nutze chefName für Chef, sonst gespeicherten Namen
+        userName = login.role === 'chef' ? chefName : login.name;
+        currentEmployee = login.role === 'chef' ? chefName : login.name;
         showMainApp();
         await loadTasks();
     } else {
@@ -138,6 +141,19 @@ async function loadVapidKey() {
     }
 }
 
+// Chef-Namen laden
+async function loadChefName() {
+    try {
+        const response = await fetch(`${API_URL}/api/chef/name`);
+        const data = await response.json();
+        chefName = data.name || 'Tobias';
+        console.log('Chef-Name geladen:', chefName);
+    } catch (error) {
+        console.error('Fehler beim Laden des Chef-Namens:', error);
+        chefName = 'Tobias'; // Fallback
+    }
+}
+
 // Mitarbeiter laden
 async function loadEmployees() {
     try {
@@ -155,9 +171,9 @@ function showLoginButtons() {
     
     loginButtons.innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
-            <button class="login-user-btn chef-btn" onclick="showPasswordPrompt('Tobias', 'chef')">
+            <button class="login-user-btn chef-btn" onclick="showPasswordPrompt('${escapeHtml(chefName)}', 'chef')">
                 <div class="login-user-icon">👷</div>
-                <div class="login-user-name">Tobias</div>
+                <div class="login-user-name">${escapeHtml(chefName)}</div>
             </button>
             ${allEmployees.map(emp => `
                 <button class="login-user-btn" onclick="showPasswordPrompt('${escapeHtml(emp.name)}', 'mitarbeiter')">
@@ -210,8 +226,15 @@ async function login(event, name, role) {
         if (data.success) {
             isLoggedIn = true;
             userRole = role;
-            userName = role === 'chef' ? 'Tobias' : name;
-            currentEmployee = role === 'chef' ? 'Tobias' : name;
+            // Nutze Namen aus Server-Response (enthält aktuellen Chef-Namen aus DB)
+            userName = data.name || name;
+            currentEmployee = data.name || name;
+            
+            // Update chefName wenn Chef sich einloggt
+            if (role === 'chef' && data.name) {
+                chefName = data.name;
+            }
+            
             localStorage.setItem('login', JSON.stringify({ role, name: userName }));
             showMainApp();
             showNotification(`Willkommen, ${userName}! 👋`);
@@ -256,6 +279,13 @@ function showMainApp() {
     if (userRole === 'chef') {
         document.getElementById('chefView').style.display = 'block';
         document.getElementById('mitarbeiterView').style.display = 'none';
+        
+        // Update Chef-Namen in Einstellungen
+        const chefNameDisplay = document.getElementById('chefNameDisplay');
+        if (chefNameDisplay) {
+            chefNameDisplay.textContent = `👷 ${userName}`;
+        }
+        
         loadEmployeesForSelect();
         loadEmployeeManagement();
         
@@ -997,13 +1027,14 @@ async function editEmployeeName(id, currentName) {
 
 // Tobias Namen ändern
 async function editTobiasName() {
-    const newName = prompt('Neuen Namen eingeben:', 'Tobias');
+    const currentName = userName || chefName;
+    const newName = prompt('Neuen Namen eingeben:', currentName);
     
     if (!newName || newName.trim() === '') {
         return;
     }
     
-    if (newName.trim() === 'Tobias') {
+    if (newName.trim() === currentName) {
         showNotification('Name wurde nicht geändert');
         return;
     }
@@ -1020,21 +1051,35 @@ async function editTobiasName() {
             throw new Error(error.error);
         }
         
-        // Update lokale Variablen
+        // Update ALLE Variablen
+        chefName = newName.trim();
         userName = newName.trim();
         currentEmployee = newName.trim();
         localStorage.setItem('login', JSON.stringify({ role: 'chef', name: newName.trim() }));
         
-        showLoginButtons(); // Login-Buttons aktualisieren
-        await loadTasks(); // Aufgaben neu laden
-        
-        showNotification(`Name zu "${newName.trim()}" geändert! ✓`);
-        
-        // UI aktualisieren
+        // Update alle UI-Elemente
         const usernameDisplay = document.getElementById('usernameDisplay');
         if (usernameDisplay) {
             usernameDisplay.textContent = newName.trim();
         }
+        
+        const userInfo = document.getElementById('userInfo');
+        if (userInfo) {
+            userInfo.textContent = `Angemeldet als: ${newName.trim()}`;
+        }
+        
+        const chefNameDisplay = document.getElementById('chefNameDisplay');
+        if (chefNameDisplay) {
+            chefNameDisplay.textContent = `👷 ${newName.trim()}`;
+        }
+        
+        // Update Login-Buttons
+        showLoginButtons();
+        
+        // Update Aufgaben
+        await loadTasks();
+        
+        showNotification(`Name zu "${newName.trim()}" geändert! ✓`);
     } catch (error) {
         console.error('Fehler:', error);
         showNotification(error.message || 'Fehler beim Ändern des Namens', 'error');
