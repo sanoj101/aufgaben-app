@@ -66,10 +66,18 @@ function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         password TEXT NOT NULL,
+        require_password INTEGER DEFAULT 1,
+        can_upload_photo INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`, (err) => {
         if (err) console.error('Fehler beim Erstellen der Employees-Tabelle:', err);
-        else console.log('✓ Employees-Tabelle bereit');
+        else {
+            console.log('✓ Employees-Tabelle bereit');
+            
+            // Füge Spalten zu existierenden Tabellen hinzu (falls noch nicht vorhanden)
+            db.run(`ALTER TABLE employees ADD COLUMN require_password INTEGER DEFAULT 1`, () => {});
+            db.run(`ALTER TABLE employees ADD COLUMN can_upload_photo INTEGER DEFAULT 1`, () => {});
+        }
     });
 
     db.run(`CREATE TABLE IF NOT EXISTS admin_config (
@@ -215,22 +223,44 @@ app.get('/api/chef/name', (req, res) => {
 app.post('/api/login/mitarbeiter', (req, res) => {
     const { name, password } = req.body;
     
-    if (!name || !password) {
-        res.status(400).json({ error: 'Name und Passwort erforderlich' });
+    if (!name) {
+        res.status(400).json({ error: 'Name erforderlich' });
         return;
     }
 
-    db.get('SELECT * FROM employees WHERE name = ? AND password = ?', [name, password], (err, row) => {
+    db.get('SELECT * FROM employees WHERE name = ?', [name], (err, row) => {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
         }
         
-        if (row) {
-            res.json({ success: true, role: 'mitarbeiter', name: row.name });
-        } else {
-            res.status(401).json({ success: false, error: 'Falscher Name oder Passwort' });
+        if (!row) {
+            res.status(401).json({ success: false, error: 'Mitarbeiter nicht gefunden' });
+            return;
         }
+
+        // Prüfe ob Passwort erforderlich ist
+        if (row.require_password) {
+            if (!password) {
+                res.status(400).json({ error: 'Passwort erforderlich' });
+                return;
+            }
+            
+            if (row.password !== password) {
+                res.status(401).json({ success: false, error: 'Falsches Passwort' });
+                return;
+            }
+        }
+        
+        // Login erfolgreich
+        res.json({ 
+            success: true, 
+            role: 'mitarbeiter', 
+            name: row.name,
+            require_password: row.require_password ? true : false,
+            can_upload_photo: row.can_upload_photo ? true : false,
+            employee_id: row.id
+        });
     });
 });
 
@@ -320,6 +350,47 @@ app.delete('/api/employees/:id', (req, res) => {
         }
 
         res.json({ success: true, deleted: this.changes });
+    });
+});
+
+// Mitarbeiter-Einstellungen ändern (require_password, can_upload_photo)
+app.put('/api/employees/:id/settings', (req, res) => {
+    const { id } = req.params;
+    const { require_password, can_upload_photo } = req.body;
+
+    let updates = [];
+    let params = [];
+
+    if (require_password !== undefined) {
+        updates.push('require_password = ?');
+        params.push(require_password ? 1 : 0);
+    }
+
+    if (can_upload_photo !== undefined) {
+        updates.push('can_upload_photo = ?');
+        params.push(can_upload_photo ? 1 : 0);
+    }
+
+    if (updates.length === 0) {
+        res.status(400).json({ error: 'Keine Einstellungen angegeben' });
+        return;
+    }
+
+    params.push(id);
+    const query = `UPDATE employees SET ${updates.join(', ')} WHERE id = ?`;
+
+    db.run(query, params, function(err) {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+
+        if (this.changes === 0) {
+            res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+            return;
+        }
+
+        res.json({ success: true, updated: this.changes });
     });
 });
 
@@ -429,7 +500,7 @@ app.post('/api/tasks', async (req, res) => {
 // Aufgabe aktualisieren
 app.put('/api/tasks/:id', (req, res) => {
     const { id } = req.params;
-    const { status, photo } = req.body;
+    const { status, photo, updatedBy } = req.body;
 
     let updates = [];
     let params = [];
@@ -470,38 +541,83 @@ app.put('/api/tasks/:id', (req, res) => {
         }
 
         // Hole Aufgaben-Details für Push-Benachrichtigung
-        db.get('SELECT * FROM tasks WHERE id = ?', [id], (err, task) => {
+        db.get('SELECT * FROM tasks WHERE id = ?', [id], async (err, task) => {
             if (err || !task) {
                 res.json({ success: true, changes: this.changes });
                 return;
             }
 
-            // Push-Benachrichtigung an Tobias senden bei Statusänderung oder Foto
-            if (status === 'completed') {
-                // Benachrichtige Tobias dass Aufgabe erledigt wurde
-                sendPushToChef({
-                    title: '✅ Aufgabe erledigt',
-                    body: `${task.employee} hat "${task.title}" erledigt`,
-                    taskId: id
-                });
-                console.log(`✓ Push an Tobias: ${task.employee} hat "${task.title}" erledigt`);
-            } else if (photo) {
-                // Benachrichtige Tobias dass Foto hinzugefügt wurde
-                sendPushToChef({
-                    title: '📷 Foto hinzugefügt',
-                    body: `${task.employee} hat ein Foto zu "${task.title}" hinzugefügt`,
-                    taskId: id
-                });
-                console.log(`✓ Push an Tobias: Foto hinzugefügt zu "${task.title}"`);
-            } else if (status === 'open') {
-                // Benachrichtige Tobias dass Aufgabe wieder geöffnet wurde
-                sendPushToChef({
-                    title: '🔄 Aufgabe wieder geöffnet',
-                    body: `${task.employee} hat "${task.title}" wieder geöffnet`,
-                    taskId: id
-                });
-                console.log(`✓ Push an Tobias: Aufgabe "${task.title}" wieder geöffnet`);
-            }
+            // Hole Chef-Namen aus DB
+            db.get('SELECT name FROM admin_config WHERE id = 1', [], async (err2, admin) => {
+                const chefName = admin && admin.name ? admin.name : 'Tobias';
+                
+                console.log(`\n📝 Task Update: "${task.title}"`);
+                console.log(`   Zugewiesen an: ${task.employee}`);
+                console.log(`   Update von: ${updatedBy}`);
+                console.log(`   Chef-Name: ${chefName}`);
+                
+                // LOGIK: Wer bekommt die Push?
+                // 1. Mitarbeiter macht Update → Push an Tobias
+                // 2. Tobias macht Update → Push an Mitarbeiter
+                
+                const isChefUpdate = updatedBy === chefName;
+                
+                if (status === 'completed') {
+                    if (isChefUpdate) {
+                        // Tobias hat Aufgabe erledigt → Benachrichtige Mitarbeiter
+                        console.log(`   → Push an ${task.employee}: Tobias hat deine Aufgabe erledigt`);
+                        await sendPushNotification(task.employee, {
+                            title: '✅ Aufgabe erledigt',
+                            body: `${chefName} hat deine Aufgabe "${task.title}" erledigt`,
+                            taskId: id
+                        });
+                    } else {
+                        // Mitarbeiter hat Aufgabe erledigt → Benachrichtige Tobias
+                        console.log(`   → Push an ${chefName}: ${task.employee} hat Aufgabe erledigt`);
+                        await sendPushToChef({
+                            title: '✅ Aufgabe erledigt',
+                            body: `${task.employee} hat "${task.title}" erledigt`,
+                            taskId: id
+                        });
+                    }
+                } else if (photo) {
+                    if (isChefUpdate) {
+                        // Tobias hat Foto hinzugefügt → Benachrichtige Mitarbeiter
+                        console.log(`   → Push an ${task.employee}: Tobias hat Foto hinzugefügt`);
+                        await sendPushNotification(task.employee, {
+                            title: '📷 Foto hinzugefügt',
+                            body: `${chefName} hat ein Foto zu "${task.title}" hinzugefügt`,
+                            taskId: id
+                        });
+                    } else {
+                        // Mitarbeiter hat Foto hinzugefügt → Benachrichtige Tobias
+                        console.log(`   → Push an ${chefName}: ${task.employee} hat Foto hinzugefügt`);
+                        await sendPushToChef({
+                            title: '📷 Foto hinzugefügt',
+                            body: `${task.employee} hat ein Foto zu "${task.title}" hinzugefügt`,
+                            taskId: id
+                        });
+                    }
+                } else if (status === 'open') {
+                    if (isChefUpdate) {
+                        // Tobias hat Aufgabe wieder geöffnet → Benachrichtige Mitarbeiter
+                        console.log(`   → Push an ${task.employee}: Tobias hat Aufgabe wieder geöffnet`);
+                        await sendPushNotification(task.employee, {
+                            title: '🔄 Aufgabe wieder geöffnet',
+                            body: `${chefName} hat "${task.title}" wieder geöffnet`,
+                            taskId: id
+                        });
+                    } else {
+                        // Mitarbeiter hat Aufgabe wieder geöffnet → Benachrichtige Tobias
+                        console.log(`   → Push an ${chefName}: ${task.employee} hat Aufgabe wieder geöffnet`);
+                        await sendPushToChef({
+                            title: '🔄 Aufgabe wieder geöffnet',
+                            body: `${task.employee} hat "${task.title}" wieder geöffnet`,
+                            taskId: id
+                        });
+                    }
+                }
+            });
         });
 
         res.json({ success: true, changes: this.changes });

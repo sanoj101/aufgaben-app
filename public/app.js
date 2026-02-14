@@ -185,9 +185,31 @@ function showLoginButtons() {
     `;
 }
 
-// Passwort-Prompt anzeigen
-function showPasswordPrompt(name, role) {
+// Passwort-Prompt anzeigen oder direkt einloggen
+async function showPasswordPrompt(name, role) {
+    // Bei Chef immer Passwort
+    if (role === 'chef') {
+        showPasswordForm(name, role);
+        return;
+    }
+    
+    // Bei Mitarbeiter: Prüfe ob Passwort erforderlich
+    const emp = allEmployees.find(e => e.name === name);
+    
+    if (emp && !emp.require_password) {
+        // Kein Passwort erforderlich - direkt einloggen
+        await loginWithoutPassword(name);
+    } else {
+        // Passwort erforderlich
+        showPasswordForm(name, role, emp);
+    }
+}
+
+// Passwort-Formular anzeigen
+function showPasswordForm(name, role, employee = null) {
     const loginButtons = document.getElementById('loginButtons');
+    const canChangePassword = employee && employee.require_password;
+    
     loginButtons.innerHTML = `
         <div class="password-prompt">
             <h2>Anmelden als ${escapeHtml(name)}</h2>
@@ -196,13 +218,134 @@ function showPasswordPrompt(name, role) {
                     <label>Passwort</label>
                     <input type="password" id="loginPassword" required placeholder="Passwort eingeben" autofocus>
                 </div>
-                <div style="display: flex; gap: 10px;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button type="submit" class="submit-btn">Anmelden</button>
                     <button type="button" class="submit-btn" style="background: #95a5a6;" onclick="showLoginButtons()">Zurück</button>
+                    ${canChangePassword ? `
+                        <button type="button" class="submit-btn" style="background: #f39c12;" onclick="showChangePasswordPrompt(${employee.id}, '${escapeHtml(name)}')">
+                            🔑 Passwort ändern
+                        </button>
+                    ` : ''}
                 </div>
             </form>
         </div>
     `;
+}
+
+// Login ohne Passwort (für Mitarbeiter ohne Passwort-Pflicht)
+async function loginWithoutPassword(name) {
+    try {
+        const response = await fetch(`${API_URL}/api/login/mitarbeiter`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, password: '' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            isLoggedIn = true;
+            userRole = 'mitarbeiter';
+            userName = data.name;
+            currentEmployee = data.name;
+            localStorage.setItem('login', JSON.stringify({ role: 'mitarbeiter', name: userName, employee_id: data.employee_id }));
+            
+            // Speichere Einstellungen
+            localStorage.setItem('employee_settings', JSON.stringify({
+                can_upload_photo: data.can_upload_photo
+            }));
+            
+            showMainApp();
+            showNotification(`Willkommen, ${userName}! 👋`);
+        } else {
+            showNotification('Fehler beim Anmelden', 'error');
+            showLoginButtons();
+        }
+    } catch (error) {
+        console.error('Login-Fehler:', error);
+        showNotification('Login fehlgeschlagen', 'error');
+        showLoginButtons();
+    }
+}
+
+// Passwort-Änderungs-Prompt im Login-Screen
+function showChangePasswordPrompt(employeeId, name) {
+    const loginButtons = document.getElementById('loginButtons');
+    
+    loginButtons.innerHTML = `
+        <div class="password-prompt">
+            <h2>Passwort ändern für ${escapeHtml(name)}</h2>
+            <form onsubmit="changePasswordFromLogin(event, ${employeeId}, '${escapeHtml(name)}')">
+                <div class="form-group">
+                    <label>Aktuelles Passwort</label>
+                    <input type="password" id="oldPassword" required placeholder="Aktuelles Passwort" autofocus>
+                </div>
+                <div class="form-group">
+                    <label>Neues Passwort</label>
+                    <input type="password" id="newPassword" required placeholder="Neues Passwort">
+                </div>
+                <div class="form-group">
+                    <label>Neues Passwort wiederholen</label>
+                    <input type="password" id="confirmPassword" required placeholder="Passwort bestätigen">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="submit-btn">Passwort ändern</button>
+                    <button type="button" class="submit-btn" style="background: #95a5a6;" onclick="showLoginButtons()">Abbrechen</button>
+                </div>
+            </form>
+        </div>
+    `;
+}
+
+// Passwort ändern vom Login-Screen aus
+async function changePasswordFromLogin(event, employeeId, name) {
+    event.preventDefault();
+    
+    const oldPassword = document.getElementById('oldPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+        showNotification('Passwörter stimmen nicht überein!', 'error');
+        return;
+    }
+    
+    if (newPassword.length < 3) {
+        showNotification('Passwort muss mindestens 3 Zeichen lang sein', 'error');
+        return;
+    }
+    
+    try {
+        // Erst mit altem Passwort einloggen zum Verifizieren
+        const loginResponse = await fetch(`${API_URL}/api/login/mitarbeiter`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, password: oldPassword })
+        });
+        
+        if (!loginResponse.ok) {
+            showNotification('Aktuelles Passwort ist falsch!', 'error');
+            return;
+        }
+        
+        // Passwort ändern
+        const response = await fetch(`${API_URL}/api/employees/${employeeId}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: newPassword })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error);
+        }
+        
+        showNotification('Passwort erfolgreich geändert! ✓');
+        showLoginButtons();
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification(error.message || 'Fehler beim Ändern des Passworts', 'error');
+    }
 }
 
 // Login
@@ -233,6 +376,14 @@ async function login(event, name, role) {
             // Update chefName wenn Chef sich einloggt
             if (role === 'chef' && data.name) {
                 chefName = data.name;
+            }
+            
+            // Speichere Mitarbeiter-Einstellungen
+            if (role === 'mitarbeiter') {
+                localStorage.setItem('employee_settings', JSON.stringify({
+                    can_upload_photo: data.can_upload_photo !== false,
+                    employee_id: data.employee_id
+                }));
             }
             
             localStorage.setItem('login', JSON.stringify({ role, name: userName }));
@@ -668,8 +819,10 @@ function displayTasksForEmployee(tasks) {
                 <div class="task-actions">
                     ${task.status === 'open' ? `
                         <button class="action-btn complete-btn" onclick="completeTask(${task.id})" style="width: 100%; padding: 20px; font-size: 20px; font-weight: bold; margin-bottom: 15px;">✓ AUFGABE ERLEDIGT</button>
-                        <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()" style="width: 100%; padding: 15px; font-size: 18px;">📷 Foto ${task.photo ? 'ändern' : 'aufnehmen'}</button>
-                        <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" capture="environment" onchange="addPhoto(${task.id}, event)">
+                        ${canUploadPhoto() ? `
+                            <button class="action-btn photo-btn" onclick="document.getElementById('photo-${task.id}').click()" style="width: 100%; padding: 15px; font-size: 18px;">📷 Foto ${task.photo ? 'ändern' : 'aufnehmen'}</button>
+                            <input type="file" id="photo-${task.id}" class="photo-input" accept="image/*" capture="environment" onchange="addPhoto(${task.id}, event)">
+                        ` : ''}
                     ` : ''}
                     ${task.status === 'completed' ? `
                         <button class="action-btn" style="background: #f39c12; color: white; width: 100%; padding: 15px;" onclick="reopenTask(${task.id})">🔄 Wieder öffnen</button>
@@ -736,7 +889,10 @@ async function completeTask(taskId) {
         const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'completed' })
+            body: JSON.stringify({ 
+                status: 'completed',
+                updatedBy: currentEmployee
+            })
         });
 
         if (!response.ok) throw new Error('Fehler beim Aktualisieren');
@@ -757,7 +913,10 @@ async function reopenTask(taskId) {
         const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'open' })
+            body: JSON.stringify({ 
+                status: 'open',
+                updatedBy: currentEmployee
+            })
         });
 
         if (!response.ok) throw new Error('Fehler beim Aktualisieren');
@@ -830,7 +989,10 @@ async function addPhoto(taskId, event) {
             const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ photo: e.target.result })
+                body: JSON.stringify({ 
+                    photo: e.target.result,
+                    updatedBy: currentEmployee // WER das Update macht
+                })
             });
 
             if (!response.ok) throw new Error('Fehler beim Hochladen');
@@ -933,6 +1095,23 @@ async function loadEmployeeManagement() {
     employeeList.innerHTML = allEmployees.map(emp => `
         <div class="employee-card">
             <div class="employee-name">👷 ${escapeHtml(emp.name)}</div>
+            
+            <div style="display: flex; gap: 15px; margin: 10px 0; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" ${emp.require_password ? 'checked' : ''} 
+                           onchange="toggleEmployeeSetting(${emp.id}, 'require_password', this.checked)"
+                           style="cursor: pointer;">
+                    <span style="font-size: 14px;">🔒 Passwort erforderlich</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" ${emp.can_upload_photo ? 'checked' : ''} 
+                           onchange="toggleEmployeeSetting(${emp.id}, 'can_upload_photo', this.checked)"
+                           style="cursor: pointer;">
+                    <span style="font-size: 14px;">📷 Foto-Upload erlaubt</span>
+                </label>
+            </div>
+            
             <div class="employee-actions">
                 <button class="employee-btn edit" onclick="editEmployeeName(${emp.id}, '${escapeHtml(emp.name).replace(/'/g, "\\'")}')">
                     ✏️ Namen ändern
@@ -983,6 +1162,41 @@ async function addEmployee(event) {
     } catch (error) {
         console.error('Fehler:', error);
         showNotification(error.message || 'Fehler beim Anlegen', 'error');
+    }
+}
+
+// Mitarbeiter-Einstellung umschalten
+async function toggleEmployeeSetting(id, setting, value) {
+    try {
+        const response = await fetch(`${API_URL}/api/employees/${id}/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [setting]: value })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error);
+        }
+        
+        // Update lokales Array
+        const emp = allEmployees.find(e => e.id === id);
+        if (emp) {
+            emp[setting] = value;
+        }
+        
+        const settingNames = {
+            'require_password': 'Passwort-Pflicht',
+            'can_upload_photo': 'Foto-Upload'
+        };
+        
+        showNotification(`${settingNames[setting]} ${value ? 'aktiviert' : 'deaktiviert'} ✓`);
+    } catch (error) {
+        console.error('Fehler:', error);
+        showNotification(error.message || 'Fehler beim Ändern der Einstellung', 'error');
+        // Bei Fehler: Checkbox zurücksetzen
+        await loadEmployees();
+        await loadEmployeeManagement();
     }
 }
 
@@ -1172,6 +1386,23 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Prüfe ob Mitarbeiter Foto hochladen darf
+function canUploadPhoto() {
+    // Chef darf immer
+    if (userRole === 'chef') return true;
+    
+    // Mitarbeiter: Prüfe Einstellungen
+    const settings = localStorage.getItem('employee_settings');
+    if (!settings) return true; // Default: erlaubt
+    
+    try {
+        const parsed = JSON.parse(settings);
+        return parsed.can_upload_photo !== false;
+    } catch {
+        return true;
+    }
 }
 
 // Benachrichtigung anzeigen
